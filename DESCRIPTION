@@ -4,8 +4,8 @@ Title: Extracts Mixed Effects Models Info
 Version: 0.1.0
 Author: James Turner
 Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Description: Use Extract_GLMER(Model_1, "Model_1Output.csv") and Extract_LMER(Model_2, "Model_2Output.csv")
+Where Model_1 is a GLMER object and Model_2 is an LMER object created under lme4 or lmerTest
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true
