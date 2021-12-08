@@ -91,7 +91,7 @@ Extract_GLMER<-function(Mod, OutputFile="OutputFileName.csv",
                         showObs=T,
                         showRanInts =T,
                         showRanSlopes=T,
-                        shoPvalues=T){
+                        showPvalues=T){
 
   datOut = as.data.frame(summary(Mod)$coef)
   datOut[,1:3]=round(datOut[,1:3], digits=2)
