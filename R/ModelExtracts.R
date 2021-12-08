@@ -20,9 +20,9 @@ names(datOut)[names(datOut) == "t_value2"] <- "t value"
 names(datOut)[names(datOut) == "Fixed_Factors"] <- "Fixed Effects"
 names(datOut)[names(datOut) == "Std. Error"] <- "SE"
 colnames(datOut)[colnames(datOut)=="t_value"]="t value"
-datOut$p_value=format(round(datOut$p_value, digits=2), nsmall=2)
+datOut$p_value=format(round(datOut$p_value, digits=3), nsmall=3)
 datOut$p_value[datOut$p_value=="0.00"]="< .0001"
-datOut$p_value[datOut$p_value=="1.00"]="0.99"
+datOut$p_value[datOut$p_value=="1.00"]="0.999"
 colnames(datOut)[colnames(datOut)=="p_value"]="p value"
 nrows=nrow(datOut)
 datOut[nrows+1,1]= "Significance levels: *** p < .001, ** p < .01, * p < .05, . p < .1"
@@ -104,9 +104,9 @@ Extract_GLMER<-function(Mod, OutputFile="OutputFileName.csv",
   names(datOut)[names(datOut) == "Fixed_Factors"] <- "Fixed Effects"
   names(datOut)[names(datOut) == "Std. Error"] <- "SE"
   colnames(datOut)[colnames(datOut)=="t_value"]="t value"
-  datOut$p_value=format(round(datOut$p_value, digits=2), nsmall=2)
+  datOut$p_value=format(round(datOut$p_value, digits=3), nsmall=3)
   datOut$p_value[datOut$p_value=="0.00"]="< .0001"
-  datOut$p_value[datOut$p_value=="1.00"]="0.99"
+  datOut$p_value[datOut$p_value=="1.00"]="0.999"
   colnames(datOut)[colnames(datOut)=="p_value"]="p value"
   nrows=nrow(datOut)
   datOut[nrows+1,1]= "Significance levels: *** p < .001, ** p < .01, * p < .05, . p < .1"
