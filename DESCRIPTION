@@ -8,4 +8,5 @@ Description: Use Extract_GLMER(Model_1, "Model_1Output.csv") and Extract_LMER(Mo
 License: What license is it under?
 Encoding: UTF-8
 LazyData: true
-Depends: lmerTest, stringr
+Depends: lmerTest,
+         stringr
