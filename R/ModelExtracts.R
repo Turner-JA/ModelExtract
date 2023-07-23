@@ -231,8 +231,6 @@ deviation_code<-function(df, vars){
 }
 
 deviation_code2 <-function(df, vars){
-  df=AnxietyDFLong
-  var="Anxiety_Factor"
   dfname=substitute(df)
   nvars=length(vars)
   for (i in 1:nvars){
