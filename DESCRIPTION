@@ -1,7 +1,7 @@
 Package: ModelExtract
 Type: Package
 Title: Extracts Mixed Effects Models Info
-Version: 0.7.6
+Version: 0.7.7
 Author: James Turner
 Maintainer: James Turner <James.Turner@soton.ac.uk>
 Description: Use Extract_GLMER(Model_1, "Model_1Output.csv") and Extract_LMER(Model_2, "Model_2Output.csv") where Model_1 is a GLMER object and Model_2 is an LMER object created under lme4 or lmerTest
