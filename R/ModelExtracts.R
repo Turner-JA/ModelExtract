@@ -229,3 +229,25 @@ deviation_code<-function(df, vars){
     print(contrasts(df[,var]))
   }
 }
+
+deviation_code2 <-function(df, vars){
+  df=AnxietyDFLong
+  var="Anxiety_Factor"
+  dfname=substitute(df)
+  nvars=length(vars)
+  for (i in 1:nvars){
+    var <-vars[[i]]
+    df[,var]=as.factor(df[,var])
+    df[,var]=droplevels(df[,var])
+    test=contrasts(df[,var])
+    ncats=nrow(test)
+    collabels=rownames(test)
+    collabels=collabels[2:ncats]
+    my.coding=contrasts(df[,var])
+    my.coding=contr.sum(ncats)
+    colnames(my.coding)=collabels
+    contrasts(df[,var])=my.coding
+    assign(paste(dfname),df,envir=.GlobalEnv)
+    print(contrasts(df[,var]))
+  }
+}
