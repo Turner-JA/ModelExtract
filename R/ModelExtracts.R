@@ -242,11 +242,14 @@ deviation_code2 <-function(df, vars){
     test=contrasts(df[,var])
     ncats=nrow(test)
     collabels=rownames(test)
-    collabels=collabels[2:ncats]
+    finalcollabel=collabels[ncats]
+    df[,var]<-relevel(df[,var], ref=finalcollabel)
+    collabels=collabels[1:ncats-1]
     my.coding=contrasts(df[,var])
     my.coding=contr.sum(ncats)
     colnames(my.coding)=collabels
     contrasts(df[,var])=my.coding
+    contrasts(df[,var])
     assign(paste(dfname),df,envir=.GlobalEnv)
     print(contrasts(df[,var]))
   }
