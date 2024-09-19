@@ -82,7 +82,7 @@ Extract_LMER<-function(Mod, OutputFile="OutputFileName.csv",
       }
     }}
   datOut[is.na(datOut)==T]=""
-  write.xlsx(datOut, file = OutputFile)
+  write.xlsx(datOut, file = OutputFile, rownames=F)
 }
 
 
@@ -170,7 +170,7 @@ Extract_GLMER<-function(Mod, OutputFile="OutputFileName.csv",
       }
     }}
   datOut[is.na(datOut)==T]=""
-  write.xlsx(datOut, file = OutputFile)
+  write.xlsx(datOut, file = OutputFile, rownames=F)
 }
 
 
