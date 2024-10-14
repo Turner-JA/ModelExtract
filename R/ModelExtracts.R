@@ -179,14 +179,14 @@ effects_code<-function(df, vars){
   nvars=length(vars)
   for (i in 1:nvars){
     var <-vars[[i]]
-    df[,var]=as.factor(df[,var])
-    df[,var]=droplevels(df[,var])
-    test=contrasts(df[,var])
+    df[[var]]=as.factor(df[[var]])
+    df[[var]]=droplevels(df[[var]])
+    test=contrasts(df[[var]])
     ncats=nrow(test)
     my.coding<-matrix(rep(1/ncats, (ncats*(ncats-1))), ncol=ncats-1)
-    contrasts(df[,var])<-test-my.coding
+    contrasts(df[[var]])<-test-my.coding
     assign(paste(dfname),df,envir=.GlobalEnv)
-    print(contrasts(df[,var]))
+    print(contrasts(df[[var]]))
   }
 }
 
@@ -195,18 +195,18 @@ dummy_code<-function(df, vars){
   nvars=length(vars)
   for (i in 1:nvars){
     var <-vars[[i]]   
-    df[,var]=as.factor(df[,var])
-    df[,var]=droplevels(df[,var])
-    test=contrasts(df[,var])
+    df[[var]]=as.factor(df[[var]])
+    df[[var]]=droplevels(df[[var]])
+    test=contrasts(df[[var]])
     ncats=nrow(test)
     collabels=rownames(test)
     collabels=collabels[2:ncats]
-    my.coding=contrasts(df[,var])
+    my.coding=contrasts(df[[var]])
     my.coding=contr.treatment(ncats)
     colnames(my.coding)=collabels
-    contrasts(df[,var])=my.coding
+    contrasts(df[[var]])=my.coding
     assign(paste(dfname),df,envir=.GlobalEnv)
-    print(contrasts(df[,var]))
+    print(contrasts(df[[var]]))
   }
 }
 
@@ -215,18 +215,18 @@ deviation_code<-function(df, vars){
   nvars=length(vars)
   for (i in 1:nvars){
     var <-vars[[i]]
-    df[,var]=as.factor(df[,var])
-    df[,var]=droplevels(df[,var])
-    test=contrasts(df[,var])
+    df[[var]]=as.factor(df[[var]])
+    df[[var]]=droplevels(df[[var]])
+    test=contrasts(df[[var]])
     ncats=nrow(test)
     collabels=rownames(test)
     collabels=collabels[1:ncats-1]
-    my.coding=contrasts(df[,var])
+    my.coding=contrasts(df[[var]])
     my.coding=contr.sum(ncats)
     colnames(my.coding)=collabels
-    contrasts(df[,var])=my.coding
+    contrasts(df[[var]])=my.coding
     assign(paste(dfname),df,envir=.GlobalEnv)
-    print(contrasts(df[,var]))
+    print(contrasts(df[[var]]))
   }
 }
 
@@ -235,24 +235,24 @@ deviation_code2 <-function(df, vars){
   nvars=length(vars)
   for (i in 1:nvars){
     var <-vars[[i]]
-    df[,var]=as.factor(df[,var])
-    df[,var]=droplevels(df[,var])
-    test=contrasts(df[,var])
+    df[[var]]=as.factor(df[[var]])
+    df[[var]]=droplevels(df[[var]])
+    test=contrasts(df[[var]])
     ncats=nrow(test)
     collabels=rownames(test)
     finalcollabel=collabels[ncats]
-    df[,var]<-relevel(df[,var], ref=finalcollabel)
-    test=contrasts(df[,var])
+    df[[var]]<-relevel(df[[var]], ref=finalcollabel)
+    test=contrasts(df[[var]])
     ncats=nrow(test)
     collabels=rownames(test)
     finalcollabel=collabels[ncats]
     collabels=collabels[1:ncats-1]
-    my.coding=contrasts(df[,var])
+    my.coding=contrasts(df[[var]])
     my.coding=contr.sum(ncats)
     colnames(my.coding)=collabels
-    contrasts(df[,var])=my.coding
-    contrasts(df[,var])
+    contrasts(df[[var]])=my.coding
+    contrasts(df[[var]])
     assign(paste(dfname),df,envir=.GlobalEnv)
-    print(contrasts(df[,var]))
+    print(contrasts(df[[var]]))
   }
 }
