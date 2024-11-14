@@ -256,3 +256,24 @@ deviation_code2 <-function(df, vars){
     print(contrasts(df[[var]]))
   }
 }
+
+
+RanSlope_Tester <- function(DF, var, RanIntercepts) {
+  # Check if `var` contains "*"; if so, split it
+  split_vars <- if (grepl("\\*", var)) unlist(strsplit(var, "\\*")) else var
+  
+  for (RanIntercept in RanIntercepts) {
+    # Construct the formula dynamically based on whether `var` was split
+    formula_parts <- c(RanIntercept, split_vars)
+    formula_str <- paste("~", paste(sprintf("DF[['%s']]", formula_parts), collapse = " + "))
+    test <- as.data.frame(xtabs(as.formula(formula_str), data = DF))
+    test <- subset(test, Freq == 0)
+    
+    # Output colored messages based on `test` result
+    if (nrow(test) == 0) {
+      message(crayon::green("Random slope of ", var, " justified for ", RanIntercept))
+    } else {
+      message(crayon::red("Random slope of ", var, " NOT justified for ", RanIntercept, ": lack of variance"))
+    }
+  }
+}
