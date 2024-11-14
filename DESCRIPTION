@@ -10,4 +10,5 @@ Encoding: UTF-8
 LazyData: true
 Depends: lmerTest,
          stringr,
-         xlsx
+         xlsx,
+         crayon
