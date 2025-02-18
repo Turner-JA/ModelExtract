@@ -282,8 +282,6 @@ RanSlope_Tester2 <- function(DF, var, RanIntercepts) {
   # Check if `var` contains "*"; if so, split it
   split_vars <- if (grepl("\\*", var)) unlist(strsplit(var, "\\*")) else var
   
-  RanIntercept="FirstLastName_for_merging_anon"
-  
   for (RanIntercept in RanIntercepts) {
     # Construct the formula dynamically based on whether `var` was split
     formula_parts <- c(RanIntercept, split_vars)
