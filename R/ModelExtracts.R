@@ -277,3 +277,26 @@ RanSlope_Tester <- function(DF, var, RanIntercepts) {
     }
   }
 }
+
+RanSlope_Tester2 <- function(DF, var, RanIntercepts) {
+  # Check if `var` contains "*"; if so, split it
+  split_vars <- if (grepl("\\*", var)) unlist(strsplit(var, "\\*")) else var
+  
+  RanIntercept="FirstLastName_for_merging_anon"
+  
+  for (RanIntercept in RanIntercepts) {
+    # Construct the formula dynamically based on whether `var` was split
+    formula_parts <- c(RanIntercept, split_vars)
+    formula_str <- paste("~", paste(sprintf("DF[['%s']]", formula_parts), collapse = " + "))
+    test <- as.data.frame(xtabs(as.formula(formula_str), data = DF))
+    test0s <- subset(test, Freq == 0)
+    test0sand1s <- subset(test, Freq != 0 & Freq !=1)
+    
+    # Output colored messages based on `test` result
+    if (nrow(test0s) == 0 & nrow(test0sand1s) !=0) {
+      message(crayon::green("Random slope of ", var, " justified for ", RanIntercept))
+    } else {
+      message(crayon::red("Random slope of ", var, " NOT justified for ", RanIntercept, ": lack of variance"))
+    }
+  }
+}
