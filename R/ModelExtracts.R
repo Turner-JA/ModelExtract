@@ -302,20 +302,21 @@ RanSlope_Tester2 <- function(DF, var, RanIntercepts) {
 get_min_ranef_slope <- function(model) {
   vc <- VarCorr(model)$cond
   
-  # Collect SDs per grouping factor
   ranef_sd_df <- do.call(rbind, lapply(names(vc), function(g) {
     df <- as.data.frame(attr(vc[[g]], "stddev"))
     
-    # If only intercept, skip
-    if(nrow(df) <= 1) return(NULL)
+    # Keep only random slopes, drop intercept if it exists
+    if(nrow(df) > 1) {
+      df <- df[-1,, drop=FALSE]
+    } else {
+      df <- df[0,, drop=FALSE]  # empty if only intercept
+    }
     
-    # Keep slopes only (drop intercept)
-    slopes_df <- df[-1,, drop=FALSE]
+    if(nrow(df) == 0) return(NULL)  # skip groups with no slope
     
-    # Data frame with all slopes per factor
     data.frame(
-      term = rownames(slopes_df),
-      stddev = slopes_df[,1],
+      term = rownames(df),
+      stddev = df[,1],
       group = g,
       row.names = NULL
     )
@@ -325,25 +326,22 @@ get_min_ranef_slope <- function(model) {
   if(nrow(ranef_sd_df) == 0) {
     return(list(
       ranef_sd_df = NULL,
-      min_ranef_factor = NULL,
+      min_ranef = NULL,
       suggestion = "No random slopes in the model to remove."
     ))
   }
   
-  # Compute average SD per grouping factor
-  avg_sd_per_group <- aggregate(stddev ~ group, data = ranef_sd_df, FUN = mean)
+  # Find the random slope with minimum stddev
+  min_ranef <- subset(ranef_sd_df, stddev == min(stddev))
   
-  # Identify the factor with the smallest average SD
-  min_factor <- avg_sd_per_group[which.min(avg_sd_per_group$stddev), ]
-  
-  suggestion <- paste0("Suggest removing random slopes for group '", 
-                       min_factor$group, "' (average stddev = ", 
-                       round(min_factor$stddev, 4), ")")
+  suggestion <- paste0("Suggest removing random slope '", 
+                       min_ranef$term, "' for group '", 
+                       min_ranef$group, "' (stddev = ", 
+                       round(min_ranef$stddev, 4), ")")
   
   list(
-    ranef_sd_df = ranef_sd_df,       # all slopes
-    avg_sd_per_group = avg_sd_per_group,  # average SD per factor
-    min_ranef_factor = min_factor,
+    ranef_sd_df = ranef_sd_df,
+    min_ranef = min_ranef,
     suggestion = suggestion
   )
 }
@@ -591,5 +589,6 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
         invisible(combined_summary)
     }
 }
+
 
 
