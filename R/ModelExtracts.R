@@ -331,6 +331,15 @@ get_min_ranef_slope <- function(model) {
     ))
   }
   
+  avg_sd_per_group <- aggregate(stddev ~ group, data = ranef_sd_df, FUN = mean)
+  
+  # Identify the factor with the smallest average SD
+  min_factor <- avg_sd_per_group[which.min(avg_sd_per_group$stddev), ]
+  
+  suggestion2 <- paste0("Suggest removing random slopes for group '", 
+                       min_factor$group, "' (average stddev = ", 
+                       round(min_factor$stddev, 4), ")")
+  
   # Find the random slope with minimum stddev
   min_ranef <- subset(ranef_sd_df, stddev == min(stddev))
   
@@ -342,7 +351,10 @@ get_min_ranef_slope <- function(model) {
   list(
     ranef_sd_df = ranef_sd_df,
     min_ranef = min_ranef,
-    suggestion = suggestion
+    avg_sd_per_group = avg_sd_per_group,
+    min_factor = min_factor,
+    suggestion1 = suggestion,
+    suggestion2 = suggestion2
   )
 }
 
@@ -589,6 +601,7 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
         invisible(combined_summary)
     }
 }
+
 
 
 
