@@ -300,13 +300,20 @@ RanSlope_Tester2 <- function(DF, var, RanIntercepts) {
 }
 
 get_min_ranef_slope <- function(model) {
-  # Extract variance-covariance
   vc <- VarCorr(model)$cond
   
-  # Collect all random slopes in a data frame
   ranef_sd_df <- do.call(rbind, lapply(names(vc), function(g) {
     df <- as.data.frame(attr(vc[[g]], "stddev"))
-    df <- df[-1,, drop=FALSE]  # remove intercept row
+    
+    # Keep only random slopes, drop intercept if it exists
+    if(nrow(df) > 1) {
+      df <- df[-1,, drop=FALSE]
+    } else {
+      df <- df[0,, drop=FALSE]  # empty if only intercept
+    }
+    
+    if(nrow(df) == 0) return(NULL)  # skip groups with no slope
+    
     data.frame(
       term = rownames(df),
       stddev = df[,1],
@@ -315,10 +322,18 @@ get_min_ranef_slope <- function(model) {
     )
   }))
   
+  # If no slopes exist at all
+  if(nrow(ranef_sd_df) == 0) {
+    return(list(
+      ranef_sd_df = NULL,
+      min_ranef = NULL,
+      suggestion = "No random slopes in the model to remove."
+    ))
+  }
+  
   # Find the random slope with minimum stddev
   min_ranef <- subset(ranef_sd_df, stddev == min(stddev))
   
-  # Print suggestion
   suggestion <- paste0("Suggest removing random slope '", 
                        min_ranef$term, "' for group '", 
                        min_ranef$group, "' (stddev = ", 
@@ -574,3 +589,4 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
         invisible(combined_summary)
     }
 }
+
