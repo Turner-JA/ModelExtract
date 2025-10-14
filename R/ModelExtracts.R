@@ -583,8 +583,8 @@ RanSlope_Tester_Final <- function(
     DF, dv, var, RanIntercepts,
     min_prop = 0.3, 
     min_cluster_n = 5,
-    small_cluster_thresh = 0.3
-    imbalance_thresh = 0.3
+    small_cluster_thresh = 0.3,
+    imbalance_thresh = 0.3,
     variation_threshold = 0.05,
     include_lower_order = TRUE,
     verbose = TRUE,
@@ -780,6 +780,7 @@ RanSlope_Tester_Final <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
