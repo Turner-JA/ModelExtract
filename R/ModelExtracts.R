@@ -580,13 +580,15 @@ RanSlope_Tester_Finalold <- function(DF, dv, var, RanIntercepts,
 
 
 RanSlope_Tester_Final <- function(
-  DF, dv, var, RanIntercepts,
-  min_prop = 0.3, 
-  min_cluster_n = 5, 
-  variation_threshold = 0.05,
-  include_lower_order = TRUE,
-  verbose = TRUE,
-  return_table = FALSE
+    DF, dv, var, RanIntercepts,
+    min_prop = 0.3, 
+    min_cluster_n = 5,
+    small_cluster_thresh = 0.3
+    imbalance_thresh = 0.3
+    variation_threshold = 0.05,
+    include_lower_order = TRUE,
+    verbose = TRUE,
+    return_table = FALSE
 ) {
   # --- Load required packages ---
   required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
@@ -605,7 +607,7 @@ RanSlope_Tester_Final <- function(
     if (anyNA(DF[[g]])) warning(glue::glue("Grouping variable '{g}' has missing values."))
     if (length(unique(DF[[g]])) < 2) stop(glue::glue("Grouping variable '{g}' has < 2 clusters."))
   }
-
+  
   # --- Core diagnostic function ---
   RanSlope_Tester12 <- function(
     DF, dv, var, RanIntercepts,
@@ -725,10 +727,6 @@ RanSlope_Tester_Final <- function(
         }
       }
       
-      # --- Combine results ---
-      small_cluster_thresh <- 0.3
-      imbalance_thresh <- 0.3
-      
       if (variation_result == "Impossible") {
         overall_recommendation <- "Impossible"
       } else if (prop_small_clusters > small_cluster_thresh || 
@@ -743,8 +741,8 @@ RanSlope_Tester_Final <- function(
       
       results[[RanIntercept]] <- list(
         Grouping_Factor = RanIntercept,
-        Total_Groups = total_clusters,
-        Small_Groups = small_clusters,
+        #Total_Groups = total_clusters,
+        #Small_Groups = small_clusters,
         Prop_Small_Groups = prop_small_clusters,
         Prop_Unbalanced = prop_unbalanced,
         Prop_Clusters_Passing = prop_passing,
@@ -782,6 +780,7 @@ RanSlope_Tester_Final <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
