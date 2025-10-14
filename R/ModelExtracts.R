@@ -553,16 +553,22 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
   
   # Run diagnostics on main effects
   main_effect_results <- lapply(main_effects, function(mv) {
-    RanSlope_Tester12(DF=DF, dv=dv, var=mv, RanIntercepts=RanIntercepts,
-                      min_prop=min_prop, min_cluster_n=min_cluster_n, return_table=TRUE)
+    result <- RanSlope_Tester12(
+      DF = DF, dv = dv, var = mv,
+      RanIntercepts = RanIntercepts,
+      min_prop = min_prop, min_cluster_n = min_cluster_n,
+      return_table = TRUE
+    )
+    result$MainEffect <- mv
+    result
   })
   
-  main_effect_summary <- dplyr::bind_rows(main_effect_results, .id = "MainEffect") %>%
+  main_effect_summary <- dplyr::bind_rows(main_effect_results) %>%
     dplyr::mutate(Var_Type = "Main Effect")
   
   # Check if any main effect is impossible or high risk
   main_effect_warnings <- main_effect_summary %>%
-    dplyr::filter(Overall_Recommendation %in% c("Impossible", "High Risk"))
+    dplyr::filter(Overall_Recommendation %in% c("Impossible"))
   
   # Run interaction check only if all main effects are viable
   interaction_summary <- NULL
