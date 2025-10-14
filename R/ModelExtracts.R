@@ -566,40 +566,44 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
   main_effect_summary <- dplyr::bind_rows(main_effect_results) %>%
     dplyr::mutate(Var_Type = "Main Effect")
   
-  # Check if any main effect is impossible or high risk
-  main_effect_warnings <- main_effect_summary %>%
-    dplyr::filter(Overall_Recommendation %in% c("Impossible"))
-  
-  # Run interaction check only if all main effects are viable
+  # --- Interaction check ---
   interaction_summary <- NULL
   if (is_interaction) {
-    if (nrow(main_effect_warnings) == 0) {
-      interaction_summary <- RanSlope_Tester12(DF=DF, dv=dv, var=var, RanIntercepts=RanIntercepts,
-                                               min_prop=min_prop, min_cluster_n=min_cluster_n, return_table=TRUE) %>%
-        dplyr::mutate(Var_Type = "Interaction")
-    } else {
-      # Mark interaction as impossible
-      interaction_summary <- data.frame(
-        MainEffect = var,
-        Grouping_Factor = unique(main_effect_warnings$Grouping_Factor),
-        Var_Type = "Interaction",
-        Total_Groups = NA,
-        Problematic_Small_Groups = NA,
-        Prop_Small_Clusters = NA,
-        Prop_Unbalanced_Groups = NA,
-        Proportion_Passing = NA,
-        Variation_Result = "Impossible",
-        Overall_Recommendation = "Impossible"
-      )
+    
+    # Always run the interaction test first
+    interaction_summary <- RanSlope_Tester12(
+      DF = DF, dv = dv, var = var,
+      RanIntercepts = RanIntercepts,
+      min_prop = min_prop, min_cluster_n = min_cluster_n,
+      return_table = TRUE
+    ) %>%
+      dplyr::mutate(Var_Type = "Interaction",
+                    MainEffect = var)
+    
+    # Identify grouping factors where main effects were impossible
+    impossible_groups <- main_effect_summary %>%
+      dplyr::filter(Overall_Recommendation == "Impossible") %>%
+      dplyr::pull(Grouping_Factor) %>%
+      unique()
+    
+    if (length(impossible_groups) > 0) {
       warning_msg <- paste0(
-        "⚠️ Interaction random slope '", var, "' marked as IMPOSSIBLE because main effect(s) ",
-        paste(unique(main_effect_warnings$MainEffect), collapse = ", "),
-        " are not viable."
+        "⚠️ For interaction '", var, "', grouping factors [",
+        paste(impossible_groups, collapse = ", "),
+        "] marked as IMPOSSIBLE because main effect(s) were not viable."
       )
       warning(warning_msg)
+      
+      # Mark those grouping factors as Impossible, others keep tested results
+      interaction_summary <- interaction_summary %>%
+        dplyr::mutate(
+          Variation_Result = ifelse(Grouping_Factor %in% impossible_groups, "Impossible", Variation_Result),
+          Overall_Recommendation = ifelse(Grouping_Factor %in% impossible_groups, "Impossible", Overall_Recommendation)
+        )
     }
   }
   
+  # --- Combine results ---
   combined_summary <- main_effect_summary
   if (!is.null(interaction_summary)) {
     combined_summary <- dplyr::bind_rows(combined_summary, interaction_summary)
@@ -613,6 +617,7 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
     invisible(combined_summary)
   }
 }
+
 
 
 
