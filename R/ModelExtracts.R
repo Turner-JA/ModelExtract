@@ -358,7 +358,8 @@ get_min_ranef_slope <- function(model) {
   )
 }
 
-RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, min_cluster_n = 5, return_table = FALSE) {
+RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, 
+                                  min_prop = 0.3, min_cluster_n = 5, return_table = FALSE) {
   
   # --- Load required packages ---
   if (!requireNamespace("dplyr", quietly = TRUE) ||
@@ -376,18 +377,16 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
     
     # --- Evaluate variable safely ---
     if (grepl("\\*", var)) {
-      # Interaction: use interaction() instead of multiplying factors
       var_terms <- all.vars(rlang::parse_expr(var))
       DF[[temp_var_name]] <- interaction(DF[var_terms], drop = TRUE)
     } else {
-      # Main effect: evaluate normally
       var_expr <- rlang::parse_expr(var)
       DF[[temp_var_name]] <- with(DF, eval(var_expr))
     }
     
     var_is_continuous <- is.numeric(DF[[temp_var_name]])
     
-    # --- Helper to check if DV has variance ---
+    # --- Helper: check DV variance ---
     check_dv_variance <- function(dv_vector) {
       if (is.numeric(dv_vector)) {
         return(var(dv_vector, na.rm = TRUE) > 0)
@@ -400,7 +399,8 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
     results <- list()
     
     for (RanIntercept in RanIntercepts) {
-      message(crayon::blue("\nChecking random slope for predictor: ", var, " within grouping factor: ", RanIntercept))
+      message(crayon::blue("\nChecking random slope for predictor: ", var, 
+                           " within grouping factor: ", RanIntercept))
       
       cluster_sizes <- DF %>%
         dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
@@ -513,7 +513,8 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
       
       if (variation_result == "Impossible") {
         overall_recommendation <- "Impossible"
-      } else if (prop_small_clusters > small_cluster_thresh || prop_unbalanced > imbalance_thresh || (variation_result == "Low Variation" && prop_passing < (min_prop / 2))) {
+      } else if (prop_small_clusters > small_cluster_thresh || prop_unbalanced > imbalance_thresh || 
+                 (variation_result == "Low Variation" && prop_passing < (min_prop / 2))) {
         overall_recommendation <- "High Risk"
       } else if (variation_result == "Low Variation") {
         overall_recommendation <- "Low Confidence"
@@ -535,24 +536,28 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
     
     summary_table <- dplyr::bind_rows(lapply(results, as.data.frame))
     
-    if (return_table) {
-      return(summary_table)
-    } else {
-      invisible(summary_table)
-    }
+    if (return_table) return(summary_table) else invisible(summary_table)
   }
   
-  # --- Helper to parse main effects from interaction ---
-  parse_main_effects <- function(var) {
-    parts <- unlist(strsplit(var, "\\*"))
-    trimws(parts)
+  # --- Helper: expand all interaction combinations ---
+  expand_interactions <- function(var) {
+    parts <- trimws(unlist(strsplit(var, "\\*")))
+    n <- length(parts)
+    if (n == 1) return(parts)
+    
+    combos <- unlist(lapply(1:(n - 1), function(k) {
+      apply(combn(parts, k), 2, paste, collapse = "*")
+    }))
+    
+    return(c(combos, var))  # include full interaction at end
   }
   
+  # --- Expand the effects ---
   is_interaction <- grepl("\\*", var)
-  main_effects <- if (is_interaction) parse_main_effects(var) else var
+  main_effects <- if (is_interaction) expand_interactions(var) else var
   
-  # Run diagnostics on main effects
-  main_effect_results <- lapply(main_effects, function(mv) {
+  # --- Run diagnostics for all effects ---
+  effect_results <- lapply(main_effects, function(mv) {
     result <- RanSlope_Tester12(
       DF = DF, dv = dv, var = mv,
       RanIntercepts = RanIntercepts,
@@ -560,63 +565,17 @@ RanSlope_Tester_Final <- function(DF, dv, var, RanIntercepts, min_prop = 0.3, mi
       return_table = TRUE
     )
     result$MainEffect <- mv
+    result$Var_Type <- if (grepl("\\*", mv)) "Interaction" else "Main Effect"
     result
   })
   
-  main_effect_summary <- dplyr::bind_rows(main_effect_results) %>%
-    dplyr::mutate(Var_Type = "Main Effect")
-  
-  # --- Interaction check ---
-  interaction_summary <- NULL
-  if (is_interaction) {
-    
-    # Always run the interaction test first
-    interaction_summary <- RanSlope_Tester12(
-      DF = DF, dv = dv, var = var,
-      RanIntercepts = RanIntercepts,
-      min_prop = min_prop, min_cluster_n = min_cluster_n,
-      return_table = TRUE
-    ) %>%
-      dplyr::mutate(Var_Type = "Interaction",
-                    MainEffect = var)
-    
-    # Identify grouping factors where main effects were impossible
-    impossible_groups <- main_effect_summary %>%
-      dplyr::filter(Overall_Recommendation == "Impossible") %>%
-      dplyr::pull(Grouping_Factor) %>%
-      unique()
-    
-    if (length(impossible_groups) > 0) {
-      warning_msg <- paste0(
-        "⚠️ For interaction '", var, "', grouping factors [",
-        paste(impossible_groups, collapse = ", "),
-        "] marked as IMPOSSIBLE because main effect(s) were not viable."
-      )
-      warning(warning_msg)
-      
-      # Mark those grouping factors as Impossible, others keep tested results
-      interaction_summary <- interaction_summary %>%
-        dplyr::mutate(
-          Variation_Result = ifelse(Grouping_Factor %in% impossible_groups, "Impossible", Variation_Result),
-          Overall_Recommendation = ifelse(Grouping_Factor %in% impossible_groups, "Impossible", Overall_Recommendation)
-        )
-    }
-  }
-  
-  # --- Combine results ---
-  combined_summary <- main_effect_summary
-  if (!is.null(interaction_summary)) {
-    combined_summary <- dplyr::bind_rows(combined_summary, interaction_summary)
-  }
+  combined_summary <- dplyr::bind_rows(effect_results)
   
   print(combined_summary)
   
-  if (return_table) {
-    return(combined_summary)
-  } else {
-    invisible(combined_summary)
-  }
+  if (return_table) return(combined_summary) else invisible(combined_summary)
 }
+
 
 
 
