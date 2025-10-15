@@ -995,9 +995,20 @@ RanSlope_Tester_Auto <- function(
     )
   
   # --- Print colored table ---
-  if (verbose) {
-  # Print table row by row with colored Overall_Recommendation
-  cat("\nRanSlope Tester Results:\n")
+ if (verbose) {
+  # Print header
+  header <- c("Effect", "Effect_Type", "Grouping_Factor", 
+              "Prop_Small_Groups", "Prop_Unbalanced", 
+              "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation")
+  
+  cat(sprintf(
+    "%-20s %-12s %-15s %20s %15s %20s %10s %-20s\n",
+    header[1], header[2], header[3], header[4], header[5], header[6], header[7], header[8]
+  ))
+  
+  cat(strrep("-", 130), "\n")  # separator
+  
+  # Print rows
   for (i in 1:nrow(combined)) {
     row <- combined[i, ]
     rec_colored <- switch(
@@ -1008,9 +1019,10 @@ RanSlope_Tester_Auto <- function(
       "Low Risk" = crayon::green(row$Overall_Recommendation)
     )
     cat(sprintf(
-      "%-20s %-12s %-15s %6.3f %6.3f %6.3f %6.3f %s\n",
+      "%-20s %-12s %-15s %20.3f %15.3f %20.3f %10.3f %-20s\n",
       row$Effect, row$Effect_Type, row$Grouping_Factor,
-      row$Prop_Small_Groups, row$Prop_Unbalanced, row$Prop_Clusters_Passing, row$Risk_Score,
+      row$Prop_Small_Groups, row$Prop_Unbalanced, 
+      row$Prop_Clusters_Passing, row$Risk_Score,
       rec_colored
     ))
   }
@@ -1018,6 +1030,7 @@ RanSlope_Tester_Auto <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
