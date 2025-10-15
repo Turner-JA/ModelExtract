@@ -1003,44 +1003,67 @@ RanSlope_Tester_Auto <- function(
   
   # --- Print colored table ---
   if (verbose) {
-    # Determine max widths
-    effect_width <- max(nchar(as.character(combined$Effect)), nchar("Effect"))
-    type_width <- max(nchar(as.character(combined$Effect_Type)), nchar("Effect_Type"))
-    group_width <- max(nchar(as.character(combined$Grouping_Factor)), nchar("Grouping_Factor"))
-    
-    # Header
+  # Convert numeric columns to strings to measure width
+  combined_str <- combined %>%
+    dplyr::mutate(
+      Prop_Small_Groups_str = sprintf("%.3f", Prop_Small_Groups),
+      Prop_Unbalanced_str = sprintf("%.3f", Prop_Unbalanced),
+      Prop_Clusters_Passing_str = sprintf("%.3f", Prop_Clusters_Passing),
+      Risk_Score_str = sprintf("%.3f", Risk_Score)
+    )
+
+  # Determine max widths (header vs content)
+  effect_width <- max(nchar(as.character(combined$Effect)), nchar("Effect"))
+  type_width <- max(nchar(as.character(combined$Effect_Type)), nchar("Effect_Type"))
+  group_width <- max(nchar(as.character(combined$Grouping_Factor)), nchar("Grouping_Factor"))
+  small_width <- max(nchar(combined_str$Prop_Small_Groups_str), nchar("Prop_Small_Groups"))
+  unbal_width <- max(nchar(combined_str$Prop_Unbalanced_str), nchar("Prop_Unbalanced"))
+  passing_width <- max(nchar(combined_str$Prop_Clusters_Passing_str), nchar("Prop_Clusters_Passing"))
+  risk_width <- max(nchar(combined_str$Risk_Score_str), nchar("Risk_Score"))
+  rec_width <- max(nchar(as.character(combined$Overall_Recommendation)), nchar("Overall_Recommendation"))
+  
+  # Header
+  cat(sprintf(
+    paste0(
+      "%-", effect_width, "s %-", type_width, "s %-", group_width, "s ",
+      "%-", small_width, "s %-", unbal_width, "s %-", passing_width, "s ",
+      "%-", risk_width, "s %-", rec_width, "s\n"
+    ),
+    "Effect", "Effect_Type", "Grouping_Factor",
+    "Prop_Small_Groups", "Prop_Unbalanced",
+    "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation"
+  ))
+  cat(strrep("-", effect_width + type_width + group_width + small_width + unbal_width +
+                   passing_width + risk_width + rec_width + 7), "\n")
+  
+  # Rows
+  for (i in 1:nrow(combined)) {
+    row <- combined[i, ]
+    rec_colored <- switch(
+      as.character(row$Overall_Recommendation),
+      "Impossible" = crayon::red(row$Overall_Recommendation),
+      "High Risk" = crayon::red(row$Overall_Recommendation),
+      "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
+      "Low Risk" = crayon::green(row$Overall_Recommendation)
+    )
     cat(sprintf(
-      paste0("%-", effect_width, "s %-", type_width, "s %-", group_width,
-             "s %-20s %-15s %-20s %-10s %-15s\n"),
-      "Effect", "Effect_Type", "Grouping_Factor",
-      "Prop_Small_Groups", "Prop_Unbalanced",
-      "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation"
+      paste0(
+        "%-", effect_width, "s %-", type_width, "s %-", group_width, "s ",
+        "%-", small_width, ".3f %-", unbal_width, ".3f %-", passing_width, ".3f ",
+        "%-", risk_width, ".3f %-", rec_width, "s\n"
+      ),
+      row$Effect, row$Effect_Type, row$Grouping_Factor,
+      row$Prop_Small_Groups, row$Prop_Unbalanced,
+      row$Prop_Clusters_Passing, row$Risk_Score,
+      rec_colored
     ))
-    cat(strrep("-", effect_width + type_width + group_width + 100), "\n")
-    
-    # Rows
-    for (i in 1:nrow(combined)) {
-      row <- combined[i, ]
-      rec_colored <- switch(
-        as.character(row$Overall_Recommendation),
-        "Impossible" = crayon::red(row$Overall_Recommendation),
-        "High Risk" = crayon::red(row$Overall_Recommendation),
-        "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
-        "Low Risk" = crayon::green(row$Overall_Recommendation)
-      )
-      cat(sprintf(
-        paste0("%-", effect_width, "s %-", type_width, "s %-", group_width,
-               "s %-20.3f %-15.3f %-20.3f %-10.3f %-15s\n"),
-        row$Effect, row$Effect_Type, row$Grouping_Factor,
-        row$Prop_Small_Groups, row$Prop_Unbalanced,
-        row$Prop_Clusters_Passing, row$Risk_Score,
-        rec_colored
-      ))
-    }
   }
+}
+
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
