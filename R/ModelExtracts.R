@@ -807,6 +807,9 @@ RanSlope_Tester_Auto <- function(
   DF, dv, var, RanIntercepts,
   include_lower_order = TRUE,
   verbose = TRUE,
+  w_small=0.4, 
+  w_unbalanced=0.2, 
+  w_variation=0.4,
   return_table = FALSE
 ) {
   # --- Load required packages ---
@@ -946,7 +949,7 @@ RanSlope_Tester_Auto <- function(
         risk_score <- 1
       } else {
         # Weighted average of factors
-        risk_score <- 0.4 * prop_small_clusters + 0.2 * prop_unbalanced + 0.4 * (1 - prop_passing)
+        risk_score <- w_small * prop_small_clusters + w_unbalanced * prop_unbalanced + w_variation * (1 - prop_passing)
       }
       
       results[[RanIntercept]] <- list(
@@ -1004,6 +1007,7 @@ RanSlope_Tester_Auto <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
