@@ -983,7 +983,7 @@ RanSlope_Tester_Auto <- function(
     }
   }
   
-  # --- Add Overall Recommendation and traffic-light color ---
+  # --- Add Overall Recommendation ---
   combined <- combined %>%
     dplyr::mutate(
       Overall_Recommendation = dplyr::case_when(
@@ -991,16 +991,22 @@ RanSlope_Tester_Auto <- function(
         Risk_Score > 0.7 ~ "High Risk",
         Risk_Score > 0.3 ~ "Medium Risk",
         TRUE ~ "Low Risk"
-      ),
-      Recommendation_Color = dplyr::case_when(
-        Overall_Recommendation == "Impossible" ~ "red",
-        Overall_Recommendation == "High Risk" ~ "orange",
-        Overall_Recommendation == "Medium Risk" ~ "yellow",
-        Overall_Recommendation == "Low Risk" ~ "green"
       )
     )
   
-  if (verbose) print(combined)
+  # --- Print colored table ---
+  if (verbose) {
+    print_colored <- combined
+    print_colored$Overall_Recommendation <- sapply(print_colored$Overall_Recommendation, function(x) {
+      if (x == "Impossible") crayon::red(x)
+      else if (x == "High Risk") crayon::red(x)
+      else if (x == "Medium Risk") crayon::yellow(x)
+      else crayon::green(x)
+    })
+    print(print_colored)
+  }
   
   if (return_table) return(combined) else invisible(combined)
 }
+
+
