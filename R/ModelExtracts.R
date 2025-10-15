@@ -578,7 +578,227 @@ RanSlope_Tester_Finalold <- function(DF, dv, var, RanIntercepts,
 
 
 
+RanSlope_Tester_Final <- function(
+    DF, dv, var, RanIntercepts,
+    min_prop = 0.3, 
+    min_cluster_n = 5,
+    small_cluster_thresh = 0.3,
+    imbalance_thresh = 0.3,
+    variation_threshold = 0.05,
+    minDVvariance = 0.05,
+    low_variation_ratio = 0.5,
+    unbalance_prop_thresh = 0.1,
+    include_lower_order = TRUE,
+    verbose = TRUE,
+    return_table = FALSE
+) {
+  # --- Load required packages ---
+  required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
+  missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing_pkgs) > 0) {
+    stop(glue::glue("Missing required packages: {paste(missing_pkgs, collapse = ', ')}"))
+  }
 
+  # --- Internal helper: conditional messaging ---
+  msg <- function(text, color = "white") {
+    if (verbose) cat(do.call(crayon::style, list(text, color)), "\n")
+  }
+
+  # --- Check for problematic grouping structures ---
+  for (g in RanIntercepts) {
+    if (anyNA(DF[[g]])) warning(glue::glue("Grouping variable '{g}' has missing values."))
+    if (length(unique(DF[[g]])) < 2) stop(glue::glue("Grouping variable '{g}' has < 2 clusters."))
+  }
+
+  # --- Core diagnostic function ---
+  RanSlope_Tester12 <- function(
+    DF, dv, var, RanIntercepts,
+    min_prop, min_cluster_n,
+    variation_threshold
+  ) {
+    temp_var_name <- ".temp_var_for_ranslope_check"
+
+    # Evaluate variable safely
+    if (grepl("\\*", var)) {
+      var_terms <- all.vars(rlang::parse_expr(var))
+      DF[[temp_var_name]] <- interaction(DF[var_terms], drop = TRUE)
+    } else {
+      var_expr <- rlang::parse_expr(var)
+      DF[[temp_var_name]] <- with(DF, eval(var_expr))
+    }
+
+    var_is_continuous <- is.numeric(DF[[temp_var_name]])
+
+    # Check DV variance
+    check_dv_variance <- function(dv_vector) {
+      if (is.numeric(dv_vector)) {
+        return(var(dv_vector, na.rm = TRUE) > 0)
+      } else {
+        present_levels <- unique(dv_vector[!is.na(dv_vector)])
+        if (length(present_levels) <= 1) return(FALSE)
+        tab <- table(dv_vector)
+        return(all(tab / sum(tab) > minDVvariance)) 
+      }
+    }
+
+    results <- list()
+
+    for (RanIntercept in RanIntercepts) {
+      msg(glue::glue("\nChecking random slope for {var} within {RanIntercept}"), "blue")
+
+      cluster_sizes <- DF %>%
+        dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+        dplyr::summarise(n = dplyr::n(), .groups = "drop")
+
+      small_clusters <- sum(cluster_sizes$n < min_cluster_n, na.rm = TRUE)
+      total_clusters <- nrow(cluster_sizes)
+      prop_small_clusters <- small_clusters / total_clusters
+
+      if (small_clusters > 0)
+        msg(glue::glue("⚠️ {small_clusters}/{total_clusters} groups < {min_cluster_n} obs."), "yellow")
+
+      variation_result <- NA
+      prop_passing <- NA
+      prop_unbalanced <- 0
+
+      # --- Continuous predictors ---
+      if (var_is_continuous) {
+        overall_sd <- stats::sd(DF[[temp_var_name]], na.rm = TRUE)
+        variation_check <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::summarise(sd_val = stats::sd(.data[[temp_var_name]], na.rm = TRUE), .groups = "drop") %>%
+          dplyr::mutate(meaningful_variation = ifelse(is.na(sd_val), FALSE, sd_val > (overall_sd * variation_threshold)))
+
+        n_with_variation <- sum(variation_check$meaningful_variation, na.rm = TRUE)
+        prop_with_variation <- n_with_variation / total_clusters
+        prop_passing <- prop_with_variation
+
+        msg_text <- glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_with_variation)}) groups show meaningful within-cluster variation.")
+        if (n_with_variation == 0) {
+          variation_result <- "Impossible"; msg(msg_text, "red")
+        } else if (prop_with_variation >= min_prop) {
+          variation_result <- "Recommended"; msg(msg_text, "green")
+        } else {
+          variation_result <- "Low Variation"; msg(msg_text, "yellow")
+        }
+
+      } else {
+        # --- Categorical predictors ---
+        counts <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(RanIntercept, temp_var_name)))) %>%
+          dplyr::summarise(n = dplyr::n(), .groups = "drop")
+
+        replicated <- counts %>% dplyr::filter(n >= 2)
+        replicated_df <- DF %>% dplyr::semi_join(replicated, by = c(RanIntercept, temp_var_name))
+
+        dv_variance_check <- replicated_df %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(RanIntercept, temp_var_name)))) %>%
+          dplyr::summarise(has_variance = check_dv_variance(.data[[dv]]), .groups = "drop")
+
+        valid_combos <- dv_variance_check %>% dplyr::filter(has_variance)
+        levels_per_group <- valid_combos %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::summarise(levels_with_variance = dplyr::n_distinct(.data[[temp_var_name]]), .groups = "drop")
+
+        n_multilevel <- sum(levels_per_group$levels_with_variance >= 2, na.rm = TRUE)
+        prop_multilevel <- n_multilevel / total_clusters
+        prop_passing <- prop_multilevel
+
+        # Unbalance check
+        level_props <- counts %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::mutate(prop = n / sum(n)) %>%
+          dplyr::ungroup()
+
+        unbalanced_groups <- level_props %>%
+          dplyr::filter(prop < unbalance_prop_thresh) %>%
+          dplyr::distinct(dplyr::across(dplyr::all_of(RanIntercept)))
+
+        prop_unbalanced <- nrow(unbalanced_groups) / total_clusters
+
+        if (nrow(unbalanced_groups) > 0)
+          msg(glue::glue("⚠️ {nrow(unbalanced_groups)} groups are highly unbalanced (<10% in a category)."), "yellow")
+
+        msg_text <- glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_multilevel)}) groups show ≥2 levels with DV variance.")
+        if (n_multilevel == 0) {
+          variation_result <- "Impossible"; msg(msg_text, "red")
+        } else if (prop_multilevel >= min_prop) {
+          variation_result <- "Recommended"; msg(msg_text, "green")
+        } else {
+          variation_result <- "Low Variation"; msg(msg_text, "yellow")
+        }
+      }
+
+      if (variation_result == "Impossible") {
+        overall_recommendation <- "Impossible"
+      } else if (prop_small_clusters > small_cluster_thresh || 
+                 prop_unbalanced > imbalance_thresh || 
+                 (variation_result == "Low Variation" && prop_passing < (min_prop * low_variation_ratio))) {
+        overall_recommendation <- "High Risk"
+      } else if (variation_result == "Low Variation") {
+        overall_recommendation <- "Low Confidence"
+      } else {
+        overall_recommendation <- "Recommended"
+      }
+
+      results[[RanIntercept]] <- list(
+        Grouping_Factor = RanIntercept,
+        #Total_Groups = total_clusters,
+        #Small_Groups = small_clusters,
+        Prop_Small_Groups = prop_small_clusters,
+        Prop_Unbalanced = prop_unbalanced,
+        Prop_Clusters_Passing = prop_passing,
+        Variation_Check = variation_result,
+        Recommendation = overall_recommendation
+      )
+    }
+
+    dplyr::bind_rows(lapply(results, as.data.frame))
+  }
+
+  # --- Expand interactions if needed ---
+  expand_interactions <- function(var) {
+    parts <- trimws(unlist(strsplit(var, "\\*")))
+    n <- length(parts)
+    if (n == 1 || !include_lower_order) return(var)
+    combos <- unlist(lapply(1:(n - 1), function(k) apply(combn(parts, k), 2, paste, collapse = "*")))
+    return(c(combos, var))
+  }
+
+  effects <- if (grepl("\\*", var)) expand_interactions(var) else var
+
+  # --- Run all diagnostics ---
+  all_results <- lapply(effects, function(eff) {
+    res <- RanSlope_Tester12(DF, dv, eff, RanIntercepts, min_prop, min_cluster_n, variation_threshold)
+    res$Effect <- eff
+    res$Effect_Type <- if (grepl("\\*", eff)) "Interaction" else "Main Effect"
+    res
+  })
+
+  combined <- dplyr::bind_rows(all_results) %>%
+    dplyr::select(Effect, Effect_Type, dplyr::everything())
+
+  # --- Hierarchical logic: downgrade interactions if lower-order terms fail ---
+  if (any(combined$Effect_Type == "Interaction")) {
+    for (eff in combined$Effect[combined$Effect_Type == "Interaction"]) {
+      parts <- unlist(strsplit(eff, "\\*"))
+      for (grp in unique(combined$Grouping_Factor)) {
+        lower_recs <- combined %>%
+          dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>%
+          dplyr::pull(Recommendation)
+
+        if (any(lower_recs %in% c("Impossible", "High Risk"))) {
+          combined$Recommendation[combined$Effect == eff & combined$Grouping_Factor == grp] <- "Impossible"
+          combined$Variation_Check[combined$Effect == eff & combined$Grouping_Factor == grp] <- "Impossible"
+        }
+      }
+    }
+  }
+
+  if (verbose) print(combined)
+
+  if (return_table) return(combined) else invisible(combined)
+}
 
 
 
@@ -821,6 +1041,7 @@ RanSlope_Tester_Auto <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
