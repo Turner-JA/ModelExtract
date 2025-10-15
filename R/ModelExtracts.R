@@ -1056,15 +1056,5 @@ for (i in 1:nrow(combined)) {
     rec_colored
   ))
 }
-
-  
   if (return_table) return(combined) else invisible(combined)
 }
-
-
-
-
-
-
-
-
