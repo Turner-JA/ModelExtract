@@ -359,7 +359,8 @@ get_min_ranef_slope <- function(model) {
 }
 
 RanSlope_Tester_Finalold <- function(DF, dv, var, RanIntercepts, 
-                                  min_prop = 0.3, min_cluster_n = 5, return_table = FALSE) {
+                                  min_prop = 0.3, min_cluster_n = 5, return_table = FALSE, small_cluster_thresh = 0.3,
+      imbalance_thresh = 0.3) {
   
   # --- Load required packages ---
   if (!requireNamespace("dplyr", quietly = TRUE) ||
