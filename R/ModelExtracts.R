@@ -507,7 +507,9 @@ RanSlope_Tester_Finalold <- function(DF, dv, var, RanIntercepts,
           variation_result <- "Low Variation"
           message(crayon::yellow(message_text))
         }
-      
+      }
+
+        
       if (variation_result == "Impossible") {
         overall_recommendation <- "Impossible"
       } else if (prop_small_clusters > small_cluster_thresh || prop_unbalanced > imbalance_thresh || 
@@ -1068,6 +1070,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
