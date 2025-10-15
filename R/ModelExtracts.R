@@ -587,6 +587,8 @@ RanSlope_Tester_Final <- function(
     imbalance_thresh = 0.3,
     variation_threshold = 0.05,
     minDVvariance = 0.05,
+    low_variation_ratio = 0.5,
+    unbalance_prop_thresh = 0.1,
     include_lower_order = TRUE,
     verbose = TRUE,
     return_table = FALSE
@@ -710,7 +712,7 @@ RanSlope_Tester_Final <- function(
           dplyr::ungroup()
         
         unbalanced_groups <- level_props %>%
-          dplyr::filter(prop < 0.1) %>%
+          dplyr::filter(prop < unbalance_prop_thresh) %>%
           dplyr::distinct(dplyr::across(dplyr::all_of(RanIntercept)))
         
         prop_unbalanced <- nrow(unbalanced_groups) / total_clusters
@@ -732,7 +734,7 @@ RanSlope_Tester_Final <- function(
         overall_recommendation <- "Impossible"
       } else if (prop_small_clusters > small_cluster_thresh || 
                  prop_unbalanced > imbalance_thresh || 
-                 (variation_result == "Low Variation" && prop_passing < (min_prop / 2))) {
+                 (variation_result == "Low Variation" && prop_passing < (min_prop * low_variation_ratio))) {
         overall_recommendation <- "High Risk"
       } else if (variation_result == "Low Variation") {
         overall_recommendation <- "Low Confidence"
@@ -798,7 +800,6 @@ RanSlope_Tester_Final <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
-
 
 
 
