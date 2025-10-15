@@ -506,10 +506,6 @@ RanSlope_Tester_Finalold <- function(DF, dv, var, RanIntercepts,
           variation_result <- "Low Variation"
           message(crayon::yellow(message_text))
         }
-      }
-      
-      small_cluster_thresh <- 0.3
-      imbalance_thresh <- 0.3
       
       if (variation_result == "Impossible") {
         overall_recommendation <- "Impossible"
@@ -1003,8 +999,8 @@ RanSlope_Tester_Auto <- function(
     dplyr::mutate(
       Overall_Recommendation = dplyr::case_when(
         Risk_Score == 1 ~ "Impossible",
-        Risk_Score > 0.7 ~ "High Risk",
-        Risk_Score > 0.3 ~ "Medium Risk",
+        Risk_Score > 0.5 ~ "High Risk",
+        Risk_Score > 0.25 ~ "Medium Risk",
         TRUE ~ "Low Risk"
       )
     )
@@ -1071,6 +1067,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
