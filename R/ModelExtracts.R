@@ -1022,39 +1022,45 @@ RanSlope_Tester_Auto <- function(
   risk_width <- max(nchar(combined_str$Risk_Score_str), nchar("Risk_Score"))
   rec_width <- max(nchar(as.character(combined$Overall_Recommendation)), nchar("Overall_Recommendation"))
   
- # Header
-cat(sprintf(
-  paste0(
-    "%-", effect_width, "s  %-", type_width, "s  %-", group_width, "s  ",
-    "%-", small_width, "s  %-", unbal_width, "s  %-", passing_width, "s  ",
-    "%-", risk_width, "s  %-", rec_width, "s\n"
-  ),
-  "Effect", "Effect_Type", "Grouping_Factor",
-  "Prop_Small_Groups", "Prop_Unbalanced",
-  "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation"
-))
-
-# Rows
-for (i in 1:nrow(combined)) {
-  row <- combined[i, ]
-  rec_colored <- switch(
-    as.character(row$Overall_Recommendation),
-    "Impossible" = crayon::red(row$Overall_Recommendation),
-    "High Risk" = crayon::red(row$Overall_Recommendation),
-    "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
-    "Low Risk" = crayon::green(row$Overall_Recommendation)
-  )
+  # Header
   cat(sprintf(
     paste0(
       "%-", effect_width, "s  %-", type_width, "s  %-", group_width, "s  ",
-      "%-", small_width, ".3f  %-", unbal_width, ".3f  %-", passing_width, ".3f  ",
-      "%-", risk_width, ".3f  %-", rec_width, "s\n"
+      "%-", small_width, "s  %-", unbal_width, "s  %-", passing_width, "s  ",
+      "%-", risk_width, "s  %-", rec_width, "s\n"
     ),
-    row$Effect, row$Effect_Type, row$Grouping_Factor,
-    row$Prop_Small_Groups, row$Prop_Unbalanced,
-    row$Prop_Clusters_Passing, row$Risk_Score,
-    rec_colored
+    "Effect", "Effect_Type", "Grouping_Factor",
+    "Prop_Small_Groups", "Prop_Unbalanced",
+    "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation"
   ))
+  cat(strrep("-", effect_width + type_width + group_width + small_width + unbal_width +
+                   passing_width + risk_width + rec_width + 14), "\n")
+  
+  # Rows
+  for (i in 1:nrow(combined)) {
+    row <- combined[i, ]
+    rec_colored <- switch(
+      as.character(row$Overall_Recommendation),
+      "Impossible" = crayon::red(row$Overall_Recommendation),
+      "High Risk" = crayon::red(row$Overall_Recommendation),
+      "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
+      "Low Risk" = crayon::green(row$Overall_Recommendation)
+    )
+    cat(sprintf(
+      paste0(
+        "%-", effect_width, "s  %-", type_width, "s  %-", group_width, "s  ",
+        "%-", small_width, ".3f  %-", unbal_width, ".3f  %-", passing_width, ".3f  ",
+        "%-", risk_width, ".3f  %-", rec_width, "s\n"
+      ),
+      row$Effect, row$Effect_Type, row$Grouping_Factor,
+      row$Prop_Small_Groups, row$Prop_Unbalanced,
+      row$Prop_Clusters_Passing, row$Risk_Score,
+      rec_colored
+    ))
+  }
 }
+
+    
   if (return_table) return(combined) else invisible(combined)
 }
+
