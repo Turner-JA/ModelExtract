@@ -943,9 +943,9 @@ RanSlope_Tester_Auto <- function(
       if (prop_passing == 0) {
         risk_score <- 1
       } else {
-        risk_score <- w_small * prop_small_clusters +
-                      w_unbalanced * prop_unbalanced +
-                      w_variation * (1 - prop_passing)
+        risk_score <- w_small * (prop_small_clusters / max(1, prop_small_clusters)) +
+              w_unbalanced * (prop_unbalanced / max(1, prop_unbalanced)) +
+              w_variation * ((1 - prop_passing) / max(1, 1 - prop_passing))
         risk_score <- min(risk_score, 1)  # cap at 1
       }
       
@@ -1071,5 +1071,6 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
