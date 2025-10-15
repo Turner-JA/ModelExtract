@@ -983,11 +983,24 @@ RanSlope_Tester_Auto <- function(
     }
   }
   
+  # --- Add Overall Recommendation and traffic-light color ---
+  combined <- combined %>%
+    dplyr::mutate(
+      Overall_Recommendation = dplyr::case_when(
+        Risk_Score == 1 ~ "Impossible",
+        Risk_Score > 0.7 ~ "High Risk",
+        Risk_Score > 0.3 ~ "Medium Risk",
+        TRUE ~ "Low Risk"
+      ),
+      Recommendation_Color = dplyr::case_when(
+        Overall_Recommendation == "Impossible" ~ "red",
+        Overall_Recommendation == "High Risk" ~ "orange",
+        Overall_Recommendation == "Medium Risk" ~ "yellow",
+        Overall_Recommendation == "Low Risk" ~ "green"
+      )
+    )
+  
   if (verbose) print(combined)
   
   if (return_table) return(combined) else invisible(combined)
 }
-
-
-
-
