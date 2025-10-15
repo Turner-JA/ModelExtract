@@ -996,17 +996,28 @@ RanSlope_Tester_Auto <- function(
   
   # --- Print colored table ---
   if (verbose) {
-    print_colored <- combined
-    print_colored$Overall_Recommendation <- sapply(print_colored$Overall_Recommendation, function(x) {
-      if (x == "Impossible") crayon::red(x)
-      else if (x == "High Risk") crayon::red(x)
-      else if (x == "Medium Risk") crayon::yellow(x)
-      else crayon::green(x)
-    })
-    print(print_colored)
+  # Print table row by row with colored Overall_Recommendation
+  cat("\nRanSlope Tester Results:\n")
+  for (i in 1:nrow(combined)) {
+    row <- combined[i, ]
+    rec_colored <- switch(
+      as.character(row$Overall_Recommendation),
+      "Impossible" = crayon::red(row$Overall_Recommendation),
+      "High Risk" = crayon::red(row$Overall_Recommendation),
+      "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
+      "Low Risk" = crayon::green(row$Overall_Recommendation)
+    )
+    cat(sprintf(
+      "%-20s %-12s %-15s %6.3f %6.3f %6.3f %6.3f %s\n",
+      row$Effect, row$Effect_Type, row$Grouping_Factor,
+      row$Prop_Small_Groups, row$Prop_Unbalanced, row$Prop_Clusters_Passing, row$Risk_Score,
+      rec_colored
+    ))
   }
+}
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
