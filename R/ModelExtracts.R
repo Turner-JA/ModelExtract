@@ -803,7 +803,7 @@ RanSlope_Tester_Final <- function(
 
 
 
-RanSlope_Tester_Final2 <- function(
+RanSlope_Tester_Auto <- function(
   DF, dv, var, RanIntercepts,
   include_lower_order = TRUE,
   verbose = TRUE,
@@ -942,11 +942,12 @@ RanSlope_Tester_Final2 <- function(
       
       # --- Risk score instead of hard thresholds ---
       # Normalize metrics and combine
-      risk_score <- mean(c(
-        prop_small_clusters,
-        prop_unbalanced,
-        1 - prop_passing
-      ), na.rm = TRUE)
+      if (prop_passing == 0) {
+        risk_score <- 1
+      } else {
+        # Weighted average of factors
+        risk_score <- 0.4 * prop_small_clusters + 0.2 * prop_unbalanced + 0.4 * (1 - prop_passing)
+      }
       
       results[[RanIntercept]] <- list(
         Grouping_Factor = RanIntercept,
@@ -1003,6 +1004,7 @@ RanSlope_Tester_Final2 <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
