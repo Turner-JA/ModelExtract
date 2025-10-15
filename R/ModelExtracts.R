@@ -586,6 +586,7 @@ RanSlope_Tester_Final <- function(
     small_cluster_thresh = 0.3,
     imbalance_thresh = 0.3,
     variation_threshold = 0.05,
+    minDVvariance = 0.05,
     include_lower_order = TRUE,
     verbose = TRUE,
     return_table = FALSE
@@ -635,7 +636,7 @@ RanSlope_Tester_Final <- function(
         present_levels <- unique(dv_vector[!is.na(dv_vector)])
         if (length(present_levels) <= 1) return(FALSE)
         tab <- table(dv_vector)
-        return(all(tab / sum(tab) > 0.05))  # at least 5% in each level
+        return(all(tab / sum(tab) > minDVvariance)) 
       }
     }
     
@@ -776,10 +777,28 @@ RanSlope_Tester_Final <- function(
   combined <- dplyr::bind_rows(all_results) %>%
     dplyr::select(Effect, Effect_Type, dplyr::everything())
   
+  # --- Hierarchical logic: downgrade interactions if lower-order terms fail ---
+  if (any(combined$Effect_Type == "Interaction")) {
+    for (eff in combined$Effect[combined$Effect_Type == "Interaction"]) {
+      parts <- unlist(strsplit(eff, "\\*"))
+      for (grp in unique(combined$Grouping_Factor)) {
+        lower_recs <- combined %>%
+          dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>%
+          dplyr::pull(Recommendation)
+        
+        if (any(lower_recs %in% c("Impossible", "High Risk"))) {
+          combined$Recommendation[combined$Effect == eff & combined$Grouping_Factor == grp] <- "Impossible"
+          combined$Variation_Check[combined$Effect == eff & combined$Grouping_Factor == grp] <- "Impossible"
+        }
+      }
+    }
+  }
+  
   if (verbose) print(combined)
   
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
