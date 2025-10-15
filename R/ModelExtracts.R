@@ -1073,6 +1073,261 @@ RanSlope_Tester_Auto <- function(
 
 
 
+# RanSlope_Tester_Auto_v2.R
+# Improved random-slope feasibility checker
+# Major improvements vs original:
+#  - Uses variance-ratio style checks for continuous predictors
+#  - Uses normalized entropy for categorical balance instead of a single "min prop" check
+#  - DV variance check uses a magnitude threshold (fraction of overall DV variance)
+#  - Interaction downgrade uses averaged lower-order risk rather than an all-or-nothing flip
+#  - Risk score is normalized and capped; optional empirical calibration placeholder
+#  - Clearer defaults and additional tunable parameters
+
+RanSlope_Tester_Auto_v2 <- function(
+  DF, dv, var, RanIntercepts,
+  include_lower_order = TRUE,
+  verbose = TRUE,
+  return_table = FALSE,
+  # --- Weights (can be calibrated externally) ---
+  w_small = 0.33, w_unbalanced = 0.33, w_variation = 0.34,
+  # --- Customizable thresholds ---
+  min_cluster_size = NULL,            # minimum obs per cluster (default: median - SD, floored at 2)
+  min_continuous_within_frac = 0.08,  # minimum *fraction* of overall variance that must appear within clusters
+  min_dv_var_frac = 0.01,             # minimum fraction of overall DV variance for within-cell DV variance to count
+  min_entropy = 0.3,                  # minimum normalized entropy (0-1) to be considered balanced
+  cap_risk_at_1 = TRUE,
+  calibrate_weights = FALSE,          # placeholder: set TRUE only if you provide calibration routine
+  verbose_progress = TRUE
+) {
+  # --- Dependencies ---
+  required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
+  missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing_pkgs) > 0) stop(glue::glue("Missing required packages: {paste(missing_pkgs, collapse = ', ')}"))
+
+  msg <- function(text, color = "white") if (verbose) cat(do.call(crayon::style, list(text, color)), "\n")
+
+  # --- Basic checks on grouping variables ---
+  for (g in RanIntercepts) {
+    if (anyNA(DF[[g]])) warning(glue::glue("Grouping variable '{g}' has missing values."))
+    if (length(unique(DF[[g]])) < 2) stop(glue::glue("Grouping variable '{g}' has < 2 clusters."))
+  }
+
+  # --- Helper: normalized entropy for categorical balance ---
+  norm_entropy <- function(counts) {
+    # counts: numeric vector of counts per level in a cluster
+    p <- counts / sum(counts)
+    p <- p[p > 0]
+    if (length(p) <= 1) return(0)
+    H <- -sum(p * log(p))
+    Hmax <- log(length(counts[counts>0]))
+    return(as.numeric(H / Hmax))
+  }
+
+  # --- Core diagnostic for a single effect and a set of grouping factors ---
+  RanSlope_Tester_core <- function(DF, dv, var_expr, RanIntercepts) {
+    temp_var <- ".__temp_var__rsts__"
+
+    # Create predictor column (handles '*' by making an interaction factor)
+    if (grepl("\\*", var_expr)) {
+      var_terms <- all.vars(rlang::parse_expr(var_expr))
+      DF[[temp_var]] <- interaction(DF[var_terms], drop = TRUE)
+    } else {
+      expr <- rlang::parse_expr(var_expr)
+      DF[[temp_var]] <- with(DF, eval(expr))
+    }
+
+    is_cont <- is.numeric(DF[[temp_var]])
+
+    # DV overall variance (used for thresholds)
+    dv_overall_var <- if (is.numeric(DF[[dv]])) var(DF[[dv]], na.rm = TRUE) else {
+      # For categorical DV, approximate with variance of indicator of majority class (not ideal but conservative)
+      1
+    }
+
+    results <- list()
+
+    for (grp in RanIntercepts) {
+      if (verbose_progress) msg(glue::glue('\n-- Checking {var_expr} within {grp} --'), 'blue')
+
+      # cluster sizes
+      cluster_sizes <- DF %>% dplyr::group_by(dplyr::across(dplyr::all_of(grp))) %>% dplyr::summarise(n = dplyr::n(), .groups = 'drop')
+      if (is.null(min_cluster_size)) {
+        min_cluster_n <- max(2, floor(median(cluster_sizes$n) - sd(cluster_sizes$n)))
+      } else {
+        min_cluster_n <- min_cluster_size
+      }
+
+      small_clusters <- sum(cluster_sizes$n < min_cluster_n, na.rm = TRUE)
+      total_clusters <- nrow(cluster_sizes)
+      prop_small <- small_clusters / total_clusters
+      if (small_clusters > 0) msg(glue::glue('⚠️ {small_clusters}/{total_clusters} groups < {min_cluster_n} obs.'), 'yellow')
+
+      prop_passing <- NA
+      prop_unbalanced <- 0
+
+      if (is_cont) {
+        overall_sd <- stats::sd(DF[[temp_var]], na.rm = TRUE)
+        overall_var <- overall_sd^2
+        # compute cluster-level variances (use var; small-sample may produce NA)
+        cluster_vars <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(grp))) %>%
+          dplyr::summarise(var_within = stats::var(.data[[temp_var]], na.rm = TRUE), .groups = 'drop')
+
+        # Replace NA (e.g., single obs) with 0
+        cluster_vars$var_within[is.na(cluster_vars$var_within)] <- 0
+
+        # meaningful if within variance accounts for at least min_continuous_within_frac of total variance
+        # i.e., var_within / overall_var >= min_continuous_within_frac
+        # If overall_var is 0 (constant predictor across full dataset), then nothing passes
+        if (overall_var <= 0 || is.na(overall_var)) {
+          cluster_vars$meaningful <- FALSE
+        } else {
+          cluster_vars$meaningful <- (cluster_vars$var_within / overall_var) >= min_continuous_within_frac
+        }
+
+        n_within_ok <- sum(cluster_vars$meaningful, na.rm = TRUE)
+        prop_passing <- n_within_ok / total_clusters
+
+        msg(glue::glue('{n_within_ok}/{total_clusters} ({scales::percent(prop_passing)}) groups have meaningful within-cluster variance (frac >= {min_continuous_within_frac}).'),
+            ifelse(prop_passing == 0, 'red', ifelse(prop_passing < 0.5, 'yellow', 'green')))
+
+        # unbalancedness: continuous predictors can be "clumped"; we measure proportion of clusters with extremely low sd
+        # compute proportion with var_within < small epsilon (relative)
+        prop_unbalanced <- sum(cluster_vars$var_within < (1e-8 + (min_continuous_within_frac * overall_var * 0.1))) / total_clusters
+
+      } else {
+        # categorical predictor: check per-cluster level counts and normalized entropy
+        counts <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(grp, temp_var)))) %>%
+          dplyr::summarise(n = dplyr::n(), .groups = 'drop')
+
+        # Entropy per cluster
+        ent_df <- counts %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(grp))) %>%
+          dplyr::summarise(ent = norm_entropy(n), levels = dplyr::n(), .groups = 'drop')
+
+        # DV variance in each (cluster, level) cell — require at least some magnitude
+        cell_stats <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(grp, temp_var)))) %>%
+          dplyr::summarise(dv_var = if(is.numeric(.data[[dv]])) stats::var(.data[[dv]], na.rm = TRUE) else NA_real_, .groups = 'drop')
+
+        cell_stats$dv_var[is.na(cell_stats$dv_var)] <- 0
+
+        # which cells are "informative" (i.e., dv_var >= min_dv_var_frac * dv_overall_var)
+        informative_cells <- cell_stats %>% dplyr::filter(dv_var >= (min_dv_var_frac * dv_overall_var))
+
+        # count number of informative levels per cluster
+        info_levels <- informative_cells %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(grp))) %>%
+          dplyr::summarise(info_levels = dplyr::n_distinct(.data[[temp_var]]), .groups = 'drop')
+
+        # merge with entropies
+        ent_df <- ent_df %>% dplyr::left_join(info_levels, by = grp)
+        ent_df$info_levels[is.na(ent_df$info_levels)] <- 0
+
+        # A cluster "passes" if: entropy >= min_entropy AND info_levels >= 2
+        ent_df$passes <- (ent_df$ent >= min_entropy) & (ent_df$info_levels >= 2)
+
+        n_multilevel <- sum(ent_df$passes, na.rm = TRUE)
+        prop_passing <- n_multilevel / total_clusters
+
+        msg(glue::glue('{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups pass categorical checks (entropy >= {min_entropy} & >=2 informative levels).'),
+            ifelse(prop_passing == 0, 'red', ifelse(prop_passing < 0.5, 'yellow', 'green')))
+
+        # For categorical predictors, unbalancedness defined as proportion of clusters with low entropy
+        prop_unbalanced <- sum(ent_df$ent < min_entropy, na.rm = TRUE) / total_clusters
+        if (sum(ent_df$ent < min_entropy, na.rm = TRUE) > 0) msg(glue::glue('⚠️ {sum(ent_df$ent < min_entropy)} groups have low entropy (< {min_entropy}).'), 'yellow')
+      }
+
+      # --- Risk score ---
+      if (is.na(prop_passing) || prop_passing == 0) {
+        risk_score <- 1
+      } else {
+        raw_score <- w_small * prop_small + w_unbalanced * prop_unbalanced + w_variation * (1 - prop_passing)
+        if (cap_risk_at_1) raw_score <- min(1, raw_score)
+        risk_score <- raw_score
+      }
+
+      results[[grp]] <- list(
+        Grouping_Factor = grp,
+        Prop_Small_Groups = prop_small,
+        Prop_Unbalanced = prop_unbalanced,
+        Prop_Clusters_Passing = prop_passing,
+        Risk_Score = risk_score
+      )
+    }
+
+    dplyr::bind_rows(lapply(results, as.data.frame))
+  }
+
+  # --- Expand interactions ---
+  expand_interactions <- function(var) {
+    parts <- trimws(unlist(strsplit(var, "\\*")))
+    n <- length(parts)
+    if (n == 1 || !include_lower_order) return(var)
+    combos <- unlist(lapply(1:(n - 1), function(k) apply(combn(parts, k), 2, paste, collapse = "*")))
+    return(c(combos, var))
+  }
+
+  effects <- if (grepl("\\*", var)) expand_interactions(var) else var
+
+  # --- Run diagnostics for each effect ---
+  all_results <- lapply(effects, function(eff) {
+    res <- RanSlope_Tester_core(DF, dv, eff, RanIntercepts)
+    res$Effect <- eff
+    res$Effect_Type <- if (grepl("\\*", eff)) 'Interaction' else 'Main Effect'
+    res
+  })
+
+  combined <- dplyr::bind_rows(all_results) %>% dplyr::select(Effect, Effect_Type, dplyr::everything())
+
+  # --- Interaction downgrade logic: use average lower-order risk, not all-or-nothing ---
+  if (any(combined$Effect_Type == 'Interaction')) {
+    interactions <- combined$Effect[combined$Effect_Type == 'Interaction']
+    for (eff in interactions) {
+      parts <- unlist(strsplit(eff, "\\*"))
+      for (grp in unique(combined$Grouping_Factor)) {
+        lower_scores <- combined %>% dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>% dplyr::pull(Risk_Score)
+        if (length(lower_scores) == 0) next
+        avg_lower <- mean(lower_scores, na.rm = TRUE)
+        # Raise interaction risk to be at least the average of lower-order risks (conservative but not extreme)
+        combined$Risk_Score[combined$Effect == eff & combined$Grouping_Factor == grp] <- pmax(
+          combined$Risk_Score[combined$Effect == eff & combined$Grouping_Factor == grp], avg_lower
+        )
+      }
+    }
+  }
+
+  # --- Add Overall Recommendation ---
+  combined <- combined %>% dplyr::mutate(
+    Overall_Recommendation = dplyr::case_when(
+      Risk_Score == 1 ~ "Impossible",
+      Risk_Score > 0.6 ~ "High Risk",
+      Risk_Score > 0.3 ~ "Medium Risk",
+      TRUE ~ "Low Risk"
+    )
+  )
+
+  # --- Print table if verbose ---
+  if (verbose) {
+    # print a compact table
+    print_tbl <- combined %>% dplyr::select(Effect, Effect_Type, Grouping_Factor, Prop_Small_Groups, Prop_Unbalanced, Prop_Clusters_Passing, Risk_Score, Overall_Recommendation)
+    print.data.frame(print_tbl)
+  }
+
+  if (return_table) return(combined) else invisible(combined)
+}
+
+# End of RanSlope_Tester_Auto_v2
+# Notes:
+#  - calibrate_weights = TRUE is a placeholder: calibrating weights properly requires a simulation
+#    routine that generates data under plausible mixed-effects scenarios and records empirical
+#    relationships between the diagnostics and convergence / singular fits. Consider implementing
+#    a separate calibration function that runs short lmer/glmer fits on simulated datasets.
+
+# Example usage:
+# res <- RanSlope_Tester_Auto_v2(DF = mydata, dv = 'y', var = 'x', RanIntercepts = c('id'), verbose = TRUE)
+
 
 
 
