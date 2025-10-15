@@ -807,10 +807,8 @@ RanSlope_Tester_Auto <- function(
   DF, dv, var, RanIntercepts,
   include_lower_order = TRUE,
   verbose = TRUE,
-  w_small=0.4, 
-  w_unbalanced=0.2, 
-  w_variation=0.4,
-  return_table = FALSE
+  return_table = FALSE,
+  w_small = 0.4, w_unbalanced = 0.2, w_variation = 0.4
 ) {
   # --- Load required packages ---
   required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
@@ -819,12 +817,11 @@ RanSlope_Tester_Auto <- function(
     stop(glue::glue("Missing required packages: {paste(missing_pkgs, collapse = ', ')}"))
   }
   
-  # --- Internal helper: conditional messaging ---
   msg <- function(text, color = "white") {
     if (verbose) cat(do.call(crayon::style, list(text, color)), "\n")
   }
   
-  # --- Check for problematic grouping structures ---
+  # --- Check grouping variables ---
   for (g in RanIntercepts) {
     if (anyNA(DF[[g]])) warning(glue::glue("Grouping variable '{g}' has missing values."))
     if (length(unique(DF[[g]])) < 2) stop(glue::glue("Grouping variable '{g}' has < 2 clusters."))
@@ -834,7 +831,6 @@ RanSlope_Tester_Auto <- function(
   RanSlope_Tester12 <- function(DF, dv, var, RanIntercepts) {
     temp_var_name <- ".temp_var_for_ranslope_check"
     
-    # Evaluate variable safely
     if (grepl("\\*", var)) {
       var_terms <- all.vars(rlang::parse_expr(var))
       DF[[temp_var_name]] <- interaction(DF[var_terms], drop = TRUE)
@@ -845,16 +841,12 @@ RanSlope_Tester_Auto <- function(
     
     var_is_continuous <- is.numeric(DF[[temp_var_name]])
     
-    # Helper: DV variance check
     check_dv_variance <- function(dv_vector) {
-      if (is.numeric(dv_vector)) {
-        return(var(dv_vector, na.rm = TRUE) > 0)
-      } else {
-        present_levels <- unique(dv_vector[!is.na(dv_vector)])
-        if (length(present_levels) <= 1) return(FALSE)
-        tab <- table(dv_vector)
-        return(all(tab / sum(tab) > 0)) # all levels present at least once
-      }
+      if (is.numeric(dv_vector)) return(var(dv_vector, na.rm = TRUE) > 0)
+      present_levels <- unique(dv_vector[!is.na(dv_vector)])
+      if (length(present_levels) <= 1) return(FALSE)
+      tab <- table(dv_vector)
+      return(all(tab / sum(tab) > 0))
     }
     
     results <- list()
@@ -862,12 +854,10 @@ RanSlope_Tester_Auto <- function(
     for (RanIntercept in RanIntercepts) {
       msg(glue::glue("\nChecking random slope for {var} within {RanIntercept}"), "blue")
       
-      # --- Cluster sizes ---
       cluster_sizes <- DF %>%
         dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
         dplyr::summarise(n = dplyr::n(), .groups = "drop")
       
-      # Dynamic small cluster threshold: 25th percentile
       min_cluster_n <- max(2, round(stats::quantile(cluster_sizes$n, 0.25)))
       small_clusters <- sum(cluster_sizes$n < min_cluster_n, na.rm = TRUE)
       total_clusters <- nrow(cluster_sizes)
@@ -876,31 +866,26 @@ RanSlope_Tester_Auto <- function(
       if (small_clusters > 0)
         msg(glue::glue("⚠️ {small_clusters}/{total_clusters} groups < {min_cluster_n} obs."), "yellow")
       
-      variation_result <- NA
       prop_passing <- NA
       prop_unbalanced <- 0
       
       if (var_is_continuous) {
-        # Continuous predictors: within-cluster variation relative to overall SD
         overall_sd <- stats::sd(DF[[temp_var_name]], na.rm = TRUE)
         cluster_sds <- DF %>%
           dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
           dplyr::summarise(sd_val = stats::sd(.data[[temp_var_name]], na.rm = TRUE), .groups = "drop")
         
-        # Dynamic threshold: median within-cluster SD relative to overall SD
         variation_threshold <- median(cluster_sds$sd_val, na.rm = TRUE) / max(overall_sd, 1e-8)
         cluster_sds <- cluster_sds %>%
           dplyr::mutate(meaningful_variation = ifelse(is.na(sd_val), FALSE, sd_val > variation_threshold * overall_sd))
         
         n_with_variation <- sum(cluster_sds$meaningful_variation, na.rm = TRUE)
-        prop_with_variation <- n_with_variation / total_clusters
-        prop_passing <- prop_with_variation
+        prop_passing <- n_with_variation / total_clusters
         
-        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_with_variation)}) groups show meaningful within-cluster variation."), 
-            ifelse(prop_with_variation == 0, "red", ifelse(prop_with_variation < 0.5, "yellow", "green")))
-        variation_result <- prop_with_variation
+        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation."), 
+            ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
+        
       } else {
-        # Categorical predictors: check level replication and DV variance
         counts <- DF %>%
           dplyr::group_by(dplyr::across(dplyr::all_of(c(RanIntercept, temp_var_name)))) %>%
           dplyr::summarise(n = dplyr::n(), .groups = "drop")
@@ -918,10 +903,8 @@ RanSlope_Tester_Auto <- function(
           dplyr::summarise(levels_with_variance = dplyr::n_distinct(.data[[temp_var_name]]), .groups = "drop")
         
         n_multilevel <- sum(levels_per_group$levels_with_variance >= 2, na.rm = TRUE)
-        prop_multilevel <- n_multilevel / total_clusters
-        prop_passing <- prop_multilevel
+        prop_passing <- n_multilevel / total_clusters
         
-        # Dynamic unbalance threshold: 50% of expected uniform proportion
         expected_prop <- 1 / length(unique(DF[[temp_var_name]]))
         unbalance_prop_thresh <- 0.5 * expected_prop
         
@@ -938,18 +921,17 @@ RanSlope_Tester_Auto <- function(
         if (nrow(unbalanced_groups) > 0)
           msg(glue::glue("⚠️ {nrow(unbalanced_groups)} groups are highly unbalanced."), "yellow")
         
-        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_multilevel)}) groups show ≥2 levels with DV variance."),
-            ifelse(prop_multilevel == 0, "red", ifelse(prop_multilevel < 0.5, "yellow", "green")))
-        variation_result <- prop_multilevel
+        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance."),
+            ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
       }
       
-      # --- Risk score instead of hard thresholds ---
-      # Normalize metrics and combine
+      # --- Risk score calculation ---
       if (prop_passing == 0) {
         risk_score <- 1
       } else {
-        # Weighted average of factors
-        risk_score <- w_small * prop_small_clusters + w_unbalanced * prop_unbalanced + w_variation * (1 - prop_passing)
+        risk_score <- w_small * prop_small_clusters +
+                      w_unbalanced * prop_unbalanced +
+                      w_variation * (1 - prop_passing)
       }
       
       results[[RanIntercept]] <- list(
@@ -957,7 +939,6 @@ RanSlope_Tester_Auto <- function(
         Prop_Small_Groups = prop_small_clusters,
         Prop_Unbalanced = prop_unbalanced,
         Prop_Clusters_Passing = prop_passing,
-        Variation_Check = variation_result,
         Risk_Score = risk_score
       )
     }
@@ -976,7 +957,7 @@ RanSlope_Tester_Auto <- function(
   
   effects <- if (grepl("\\*", var)) expand_interactions(var) else var
   
-  # --- Run all diagnostics ---
+  # --- Run diagnostics ---
   all_results <- lapply(effects, function(eff) {
     res <- RanSlope_Tester12(DF, dv, eff, RanIntercepts)
     res$Effect <- eff
@@ -995,9 +976,8 @@ RanSlope_Tester_Auto <- function(
         lower_scores <- combined %>%
           dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>%
           dplyr::pull(Risk_Score)
-        if (any(lower_scores > 0.5)) {  # risk > 0.5 marks interaction as high-risk
+        if (any(lower_scores > 0.5)) {
           combined$Risk_Score[combined$Effect == eff & combined$Grouping_Factor == grp] <- 1
-          combined$Variation_Check[combined$Effect == eff & combined$Grouping_Factor == grp] <- 0
         }
       }
     }
@@ -1007,8 +987,6 @@ RanSlope_Tester_Auto <- function(
   
   if (return_table) return(combined) else invisible(combined)
 }
-
-
 
 
 
