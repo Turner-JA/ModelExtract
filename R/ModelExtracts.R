@@ -990,7 +990,7 @@ RanSlope_Tester_Auto <- function(
         lower_scores <- combined %>%
           dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>%
           dplyr::pull(Risk_Score)
-        if (any(lower_scores > 0.5)) {
+        if (any(lower_scores == 1)) {
           combined$Risk_Score[combined$Effect == eff & combined$Grouping_Factor == grp] <- 1
         }
       }
@@ -1070,5 +1070,6 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
