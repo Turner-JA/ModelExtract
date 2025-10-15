@@ -815,7 +815,11 @@ RanSlope_Tester_Auto <- function(
   include_lower_order = TRUE,
   verbose = TRUE,
   return_table = FALSE,
-  w_small = 0.4, w_unbalanced = 0.2, w_variation = 0.4
+  w_small = 0.4, w_unbalanced = 0.2, w_variation = 0.4,
+  # --- Customizable thresholds ---
+  min_cluster_size = NULL,       # minimum obs per cluster (default: median - SD)
+  min_continuous_sd = 0.1,       # minimum meaningful variation as fraction of overall SD
+  min_cat_prop = 0.05            # minimum proportion to avoid "highly unbalanced"
 ) {
   # --- Load required packages ---
   required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
@@ -865,11 +869,16 @@ RanSlope_Tester_Auto <- function(
         dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
         dplyr::summarise(n = dplyr::n(), .groups = "drop")
       
-      min_cluster_n <- max(2, round(stats::quantile(cluster_sizes$n, 0.25)))
+      # --- Determine minimum cluster size ---
+      if (is.null(min_cluster_size)) {
+        min_cluster_n <- max(2, floor(median(cluster_sizes$n) - sd(cluster_sizes$n)))
+      } else {
+        min_cluster_n <- min_cluster_size
+      }
+      
       small_clusters <- sum(cluster_sizes$n < min_cluster_n, na.rm = TRUE)
       total_clusters <- nrow(cluster_sizes)
       prop_small_clusters <- small_clusters / total_clusters
-      
       if (small_clusters > 0)
         msg(glue::glue("⚠️ {small_clusters}/{total_clusters} groups < {min_cluster_n} obs."), "yellow")
       
@@ -882,9 +891,9 @@ RanSlope_Tester_Auto <- function(
           dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
           dplyr::summarise(sd_val = stats::sd(.data[[temp_var_name]], na.rm = TRUE), .groups = "drop")
         
-        variation_threshold <- median(cluster_sds$sd_val, na.rm = TRUE) / max(overall_sd, 1e-8)
+        threshold_sd <- max(min_continuous_sd * overall_sd, 1e-8)
         cluster_sds <- cluster_sds %>%
-          dplyr::mutate(meaningful_variation = ifelse(is.na(sd_val), FALSE, sd_val > variation_threshold * overall_sd))
+          dplyr::mutate(meaningful_variation = !is.na(sd_val) & sd_val >= threshold_sd)
         
         n_with_variation <- sum(cluster_sds$meaningful_variation, na.rm = TRUE)
         prop_passing <- n_with_variation / total_clusters
@@ -912,16 +921,14 @@ RanSlope_Tester_Auto <- function(
         n_multilevel <- sum(levels_per_group$levels_with_variance >= 2, na.rm = TRUE)
         prop_passing <- n_multilevel / total_clusters
         
-        expected_prop <- 1 / length(unique(DF[[temp_var_name]]))
-        unbalance_prop_thresh <- 0.5 * expected_prop
-        
+        # --- Unbalanced groups based on min_cat_prop ---
         level_props <- counts %>%
           dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
           dplyr::mutate(prop = n / sum(n)) %>%
           dplyr::ungroup()
         
         unbalanced_groups <- level_props %>%
-          dplyr::filter(prop < unbalance_prop_thresh) %>%
+          dplyr::filter(prop < min_cat_prop) %>%
           dplyr::distinct(dplyr::across(dplyr::all_of(RanIntercept)))
         
         prop_unbalanced <- nrow(unbalanced_groups) / total_clusters
@@ -932,13 +939,14 @@ RanSlope_Tester_Auto <- function(
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
       }
       
-      # --- Risk score calculation ---
+      # --- Risk score calculation (normalized) ---
       if (prop_passing == 0) {
         risk_score <- 1
       } else {
         risk_score <- w_small * prop_small_clusters +
                       w_unbalanced * prop_unbalanced +
                       w_variation * (1 - prop_passing)
+        risk_score <- min(risk_score, 1)  # cap at 1
       }
       
       results[[RanIntercept]] <- list(
@@ -1063,4 +1071,5 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
