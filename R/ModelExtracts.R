@@ -937,22 +937,24 @@ RanSlope_Tester_Auto <- function(
         msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance."),
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
       }
+
+      prop_failing <- 1 - prop_passing
       
       # --- Risk score calculation (normalized) ---
-      if (prop_passing == 0) {
+      if (prop_failing == 1) {
         risk_score <- 1
       } else {
         risk_score <- w_small * prop_small_clusters +
               w_unbalanced * prop_unbalanced +
-              w_variation * (1 - prop_passing)
+              w_variation * prop_failing
         #risk_score <- min(risk_score, 1)  # cap at 1
       }
-      
+    
       results[[RanIntercept]] <- list(
         Grouping_Factor = RanIntercept,
         Prop_Small_Groups = prop_small_clusters,
         Prop_Unbalanced = prop_unbalanced,
-        Prop_Clusters_Passing = prop_passing,
+        Prop_Clusters_Failing = prop_failing,
         Risk_Score = risk_score
       )
     }
@@ -1015,7 +1017,7 @@ RanSlope_Tester_Auto <- function(
     dplyr::mutate(
       Prop_Small_Groups_str = sprintf("%.3f", Prop_Small_Groups),
       Prop_Unbalanced_str = sprintf("%.3f", Prop_Unbalanced),
-      Prop_Clusters_Passing_str = sprintf("%.3f", Prop_Clusters_Passing),
+      Prop_Clusters_Failing_str = sprintf("%.3f", Prop_Clusters_Failing),
       Risk_Score_str = sprintf("%.3f", Risk_Score)
     )
 
@@ -1025,7 +1027,7 @@ RanSlope_Tester_Auto <- function(
   group_width <- max(nchar(as.character(combined$Grouping_Factor)), nchar("Grouping_Factor"))
   small_width <- max(nchar(combined_str$Prop_Small_Groups_str), nchar("Prop_Small_Groups"))
   unbal_width <- max(nchar(combined_str$Prop_Unbalanced_str), nchar("Prop_Unbalanced"))
-  passing_width <- max(nchar(combined_str$Prop_Clusters_Passing_str), nchar("Prop_Clusters_Passing"))
+  passing_width <- max(nchar(combined_str$Prop_Clusters_Failing_str), nchar("Prop_Clusters_Failing"))
   risk_width <- max(nchar(combined_str$Risk_Score_str), nchar("Risk_Score"))
   rec_width <- max(nchar(as.character(combined$Overall_Recommendation)), nchar("Overall_Recommendation"))
   
@@ -1038,7 +1040,7 @@ RanSlope_Tester_Auto <- function(
     ),
     "Effect", "Effect_Type", "Grouping_Factor",
     "Prop_Small_Groups", "Prop_Unbalanced",
-    "Prop_Clusters_Passing", "Risk_Score", "Overall_Recommendation"
+    "Prop_Clusters_Failing", "Risk_Score", "Overall_Recommendation"
   ))
   cat(strrep("-", effect_width + type_width + group_width + small_width + unbal_width +
                    passing_width + risk_width + rec_width + 14), "\n")
@@ -1061,7 +1063,7 @@ RanSlope_Tester_Auto <- function(
       ),
       row$Effect, row$Effect_Type, row$Grouping_Factor,
       row$Prop_Small_Groups, row$Prop_Unbalanced,
-      row$Prop_Clusters_Passing, row$Risk_Score,
+      row$Prop_Clusters_Failing, row$Risk_Score,
       rec_colored
     ))
   }
@@ -1070,6 +1072,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
