@@ -1,3 +1,27 @@
+hidden_level_summary <- function(model, factor_name) {
+  coefs <- fixef(model)$cond
+  V <- vcov(model)$cond
+  test=as.data.frame(attr(model[["frame"]][[factor_name]], "contrasts"))
+  cat=last(rownames(test))
+  
+  var_idx <- grep(paste0("^", factor_name), names(coefs))
+  est_hidden <- -sum(coefs[var_idx])
+  c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+  V_var <- V[var_idx, var_idx]
+  se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+  z_hidden <- est_hidden / se_hidden
+  p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+  
+  data.frame(
+    Level = paste(factor_name, cat, sep=""),
+    Estimate = est_hidden,
+    `Std. Error` = se_hidden,
+    `z value` = z_hidden,
+    `Pr(>|z|)` = p_hidden,
+    check.names = FALSE
+  )
+}
+
 Extract_LMER<-function(Mod, OutputFile="OutputFileName.csv",
                        showFormula=T,
                        showObs=T,
@@ -1072,6 +1096,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
