@@ -814,7 +814,7 @@ RanSlope_Tester_Auto <- function(
   include_lower_order = TRUE,
   verbose = TRUE,
   return_table = FALSE,
-  w_small = 0.4, w_unbalanced = 0.2, w_variation = 0.4,
+  w_small = 0.2, w_unbalanced = 0.2, w_variation = 0.6,
   # --- Customizable thresholds ---
   min_cluster_size = NULL,       # minimum obs per cluster (default: median - SD)
   min_continuous_sd = 0.1,       # minimum meaningful variation as fraction of overall SD
@@ -896,8 +896,9 @@ RanSlope_Tester_Auto <- function(
         
         n_with_variation <- sum(cluster_sds$meaningful_variation, na.rm = TRUE)
         prop_passing <- n_with_variation / total_clusters
+        prop_failing <- 1-prop_passing
         
-        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation."), 
+        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation: Props_Clusters_Failing = {prop_failing}"), 
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
         
       } else {
@@ -919,6 +920,7 @@ RanSlope_Tester_Auto <- function(
         
         n_multilevel <- sum(levels_per_group$levels_with_variance >= 2, na.rm = TRUE)
         prop_passing <- n_multilevel / total_clusters
+        prop_failing <- 1-prop_passing
         
         # --- Unbalanced groups based on min_cat_prop ---
         level_props <- counts %>%
@@ -934,11 +936,9 @@ RanSlope_Tester_Auto <- function(
         if (nrow(unbalanced_groups) > 0)
           msg(glue::glue("⚠️ {nrow(unbalanced_groups)} groups are highly unbalanced."), "yellow")
         
-        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance."),
+        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance: Prop_Clusters_Failing = {prop_failing}"),
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
       }
-
-      prop_failing <- 1 - prop_passing
       
       # --- Risk score calculation (normalized) ---
       if (prop_failing == 1) {
@@ -1072,6 +1072,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
