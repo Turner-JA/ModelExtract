@@ -1,16 +1,33 @@
 return_hidden_level <- function(model, factor_name) {
-  coefs <- fixef(model)$cond
-  V <- vcov(model)$cond
   
-  # Main effect: get missing level summary
-  test <- as.data.frame(attr(model[["frame"]][[factor_name]], "contrasts"))
-  cat <- tail(rownames(test), 1)
+  # Get fixed effects coefficients and variance-covariance matrix
+  if (is.brmsfit(model)) {
+    coefs <- fixef(model)
+    V <- vcov(model, dpar = "mu")
+    dfname = "data"
+  } else {
+    coefs <- fixef(model)$cond
+    V <- vcov(model)$cond
+    dfname = "frame"
+  }
+  
+  # Get contrasts for the factor to find the missing (hidden) level
+
+  test <- as.data.frame(attr(model[[dfname]][[factor_name]], "contrasts"))
+  cat <- tail(rownames(test), 1) # Reference category label
   target_coef_names <- paste0(factor_name, names(test))
-  var_idx <- which(names(coefs) %in% target_coef_names)
   
-  est_hidden <- -sum(coefs[var_idx])
+  if (is.brmsfit(model)) {
+    coefs_df <- as.data.frame(coefs)
+    var_idx <- which(rownames(coefs_df) %in% target_coef_names)
+    est_hidden <- -sum(coefs_df$Estimate[var_idx])
+  } else {
+    var_idx <- which(names(coefs) %in% target_coef_names)
+    est_hidden <- -sum(coefs[var_idx])
+  }
+  
   c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-  V_var <- V[var_idx, var_idx]
+  V_var <- V[var_idx, var_idx, drop = FALSE]
   se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
   z_hidden <- est_hidden / se_hidden
   p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
@@ -24,70 +41,84 @@ return_hidden_level <- function(model, factor_name) {
     check.names = FALSE
   )
   
-  # Extract interactions involving factor_name from formula
-  formula <- model[["call"]][["formula"]]
-  terms_chr <- attr(terms(formula), "term.labels")
+  if(is.brmsfit(model)==T){
+    formula <- model[["formula"]]
+    terms_chr <- get_terms_chr(formula[1]$formula)
+  } else {
+    formula <- model[["call"]][["formula"]]
+    terms_chr <- attr(terms(formula), "term.labels")
+  }
+  
+  # Find all interactions involving factor_name (with at least two factors)
   relevant_interactions <- terms_chr[grepl(factor_name, terms_chr) & grepl(":", terms_chr)]
-  relevant_interactions <- gsub(":", "*", relevant_interactions)
+  
+  # Separate two-way and three-way interactions
+  two_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 2]
+  three_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 3]
   
   interaction_dfs <- list()
   
-  # Loop over each relevant interaction
-  for (i in seq_along(relevant_interactions)) {
-    
-    factors <- unlist(strsplit(relevant_interactions[i], "\\*"))
+  # Helper function: get non-reference levels based on coding
+  get_nonref <- function(levels, is_dev) {
+    if (is_dev) {
+      levels[-length(levels)]
+    } else {
+      levels[-1]
+    }
+  }
+  
+  # Helper function: get reference level for labeling
+  get_reference_level <- function(model, factor_name, is_deviation) {
+    levels_factor <- levels(model[[dfname]][[factor_name]])
+    contr <- attr(model[[dfname]][[factor_name]], "contrasts")
+    if (is_deviation) {
+      levels_factor[length(levels_factor)]
+    } else {
+      ref <- levels_factor[apply(contr, 1, function(x) all(x == 0))]
+      if (length(ref) == 1) {
+        ref
+      } else {
+        levels_factor[1]
+      }
+    }
+  }
+  
+  # ---- Handle two-way interactions ----
+  for (interaction in two_way) {
+    factors <- unlist(strsplit(interaction, ":"))
     factorA <- factors[1]
     factorB <- factors[2]
     
-    # Assuming factor_name is deviation coded, others may not be
     devA <- (factorA == factor_name)
     devB <- (factorB == factor_name)
     
-    levelsA <- levels(model[["frame"]][[factorA]])
-    levelsB <- levels(model[["frame"]][[factorB]])
-    
-    get_nonref <- function(levels, is_dev) {
-      if (is_dev) {
-        levels[-length(levels)]
-      } else {
-        levels[-1]
-      }
-    }
+    # Get levels for factors
+    levelsA <- levels(model[[dfname]][[factorA]])
+    levelsB <- levels(model[[dfname]][[factorB]])
     
     nonrefA <- get_nonref(levelsA, devA)
     nonrefB <- get_nonref(levelsB, devB)
     
-    interaction_names <- outer(
-      paste0(factorA, nonrefA),
-      paste0(factorB, nonrefB),
-      FUN = function(a, b) paste(a, b, sep = ":")
-    ) |> as.vector()
+    # Build regex pattern to find related coef names (account for order in interaction terms)
+    pattern <- paste0("(", factorA, ".*", factorB, ")|(", factorB, ".*", factorA, ")")
     
-    var_idx <- which(names(coefs) %in% interaction_names)
+    if (is.brmsfit(model)) {
+      coefs_df <- as.data.frame(coefs)
+      var_idx <- grep(pattern, rownames(coefs_df))
+      if (length(var_idx) == 0) next
+      est_hidden <- -sum(coefs_df$Estimate[var_idx])
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+    } else {
+      var_idx <- grep(pattern, names(coefs))
+      if (length(var_idx) == 0) next
+      est_hidden <- -sum(coefs[var_idx])
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+    }
     
-    if (length(var_idx) == 0) next  # Skip if no coefficients found
-    
-    est_hidden <- -sum(coefs[var_idx])
     c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-    V_var <- V[var_idx, var_idx, drop = FALSE]
     se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
     z_hidden <- est_hidden / se_hidden
     p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-    
-    get_reference_level <- function(model, factor_name, is_deviation) {
-      levels_factor <- levels(model[["frame"]][[factor_name]])
-      if (is_deviation) {
-        levels_factor[length(levels_factor)]
-      } else {
-        contr <- contrasts(model[["frame"]][[factor_name]])
-        ref <- levels_factor[apply(contr, 1, function(x) all(x == 0))]
-        if (length(ref) == 1) {
-          ref
-        } else {
-          levels_factor[1]
-        }
-      }
-    }
     
     refA <- get_reference_level(model, factorA, devA)
     refB <- get_reference_level(model, factorB, devB)
@@ -107,7 +138,79 @@ return_hidden_level <- function(model, factor_name) {
     )
   }
   
-  # Combine main effect and all interactions into one data frame
+  # ---- Handle three-way interactions ----
+  for (interaction in three_way) {
+    factors <- unlist(strsplit(interaction, ":"))
+    factorA <- factors[1]
+    factorB <- factors[2]
+    factorC <- factors[3]
+    
+    devA <- (factorA == factor_name)
+    devB <- (factorB == factor_name)
+    devC <- (factorC == factor_name)
+    
+    levelsA <- levels(model[[dfname]][[factorA]])
+    levelsB <- levels(model[[dfname]][[factorB]])
+    levelsC <- levels(model[[dfname]][[factorC]])
+    
+    nonrefA <- get_nonref(levelsA, devA)
+    nonrefB <- get_nonref(levelsB, devB)
+    nonrefC <- get_nonref(levelsC, devC)
+    
+    # Create all combinations of the three factors' levels (excluding refs)
+    interaction_names <- as.vector(outer(
+      paste0(factorA, nonrefA),
+      paste0(factorB, nonrefB),
+      FUN = function(a, b) paste(a, b, sep = ":")
+    ))
+    interaction_names <- as.vector(outer(
+      interaction_names,
+      paste0(factorC, nonrefC),
+      FUN = function(ab, c) paste(ab, c, sep = ":")
+    ))
+    
+    # Regex pattern to match coefficients (exact matching)
+    pattern <- paste(interaction_names, collapse = "|")
+    
+    if (is.brmsfit(model)) {
+      coefs_df <- as.data.frame(coefs)
+      var_idx <- grep(pattern, rownames(coefs_df))
+      if (length(var_idx) == 0) next
+      est_hidden <- -sum(coefs_df$Estimate[var_idx])
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+    } else {
+      var_idx <- grep(pattern, names(coefs))
+      if (length(var_idx) == 0) next
+      est_hidden <- -sum(coefs[var_idx])
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+    }
+    
+    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+    z_hidden <- est_hidden / se_hidden
+    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+    
+    refA <- get_reference_level(model, factorA, devA)
+    refB <- get_reference_level(model, factorB, devB)
+    refC <- get_reference_level(model, factorC, devC)
+    
+    hidden_label <- paste0(
+      factorA, nonrefA, ":",
+      factorB, refB, ":",
+      factorC, refC
+    )
+    
+    interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+      Term = hidden_label,
+      Estimate = est_hidden,
+      `Std. Error` = se_hidden,
+      `z value` = z_hidden,
+      `Pr(>|z|)` = p_hidden,
+      check.names = FALSE
+    )
+  }
+  
+  # Combine all results
   if (length(interaction_dfs) > 0) {
     interaction_df <- do.call(rbind, interaction_dfs)
     return(rbind(main_effect_df, interaction_df))
@@ -1230,6 +1333,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
