@@ -116,6 +116,46 @@ return_hidden_level <- function(model, factor_name) {
   }
 }
 
+get_terms_chr <- function(formula) {
+  # Convert formula to terms object
+  tf <- terms(formula)
+  
+  # Get the fixed-effect terms (main and interactions) as strings
+  fixed_terms <- attr(tf, "term.labels")
+  
+  # Extract random effects terms (like (1|group), (var|id)) as character strings
+  # by parsing the right side of the formula manually
+  
+  # Get RHS of formula as character
+  rhs <- deparse(formula[[3]])
+  
+  # Find all random effects terms in parentheses with '|'
+  # Regex explanation:
+  # \\([^\\)]+\\|[^\\)]+\\)  = match (...) that contains a '|' inside
+  rand_terms <- gregexpr("\\([^\\)]+\\|[^\\)]+\\)", rhs, perl = TRUE)
+  rand_matches <- regmatches(rhs, rand_terms)[[1]]
+  
+  # Remove parentheses around random effects terms
+  rand_terms_clean <- gsub("^\\(|\\)$", "", rand_matches)
+  
+  # Also find intercept-only random effects (e.g. (1|Item))
+  # But they are included in the above regex already
+  
+  # Get interaction terms explicitly (not always included)
+  # But attr(tf, "term.labels") already includes interactions separated by ':'
+  
+  # Combine fixed and random effect terms
+  all_terms <- c(fixed_terms, rand_terms_clean)
+  
+  # Optionally: include main effects from random terms separately
+  # but your example keeps random terms as is, so skip that
+  
+  # Sort terms alphabetically or keep original order (optional)
+  # all_terms <- sort(all_terms)
+  
+  return(all_terms)
+}
+                                   
 Extract_LMER<-function(Mod, OutputFile="OutputFileName.csv",
                        showFormula=T,
                        showObs=T,
@@ -1190,6 +1230,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
