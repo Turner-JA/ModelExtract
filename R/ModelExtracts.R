@@ -12,7 +12,7 @@ return_hidden_level <- function(model, factor_name) {
   }
   
   # Get contrasts for the factor to find the missing (hidden) level
-
+  
   test <- as.data.frame(attr(model[[dfname]][[factor_name]], "contrasts"))
   cat <- tail(rownames(test), 1) # Reference category label
   target_coef_names <- paste0(factor_name, names(test))
@@ -26,20 +26,38 @@ return_hidden_level <- function(model, factor_name) {
     est_hidden <- -sum(coefs[var_idx])
   }
   
-  c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-  V_var <- V[var_idx, var_idx, drop = FALSE]
-  se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
-  z_hidden <- est_hidden / se_hidden
-  p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-  
-  main_effect_df <- data.frame(
-    Term = paste(factor_name, cat, sep = ""),
-    Estimate = est_hidden,
-    `Std. Error` = se_hidden,
-    `z value` = z_hidden,
-    `Pr(>|z|)` = p_hidden,
-    check.names = FALSE
-  )
+  if (is.brmsfit(model)) {
+    posterior <- as_draws_matrix(model)
+    hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+    se_hidden <- sd(hidden_draws)
+    ci <- quantile(hidden_draws, c(.025, .975))
+    lower_hidden <- unname(ci[1])
+    upper_hidden <- unname(ci[2])
+    
+    main_effect_df <- data.frame(
+      Term = paste(factor_name, cat, sep = ""),
+      Estimate = round(est_hidden, digits=2),
+      `Est.Error` = round(se_hidden, digits=2),
+      `l-95% CI` = round(lower_hidden, digits=2),
+      `u-95% CI` = round(upper_hidden, digits=2),
+      check.names = FALSE
+    )
+  } else {
+    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+    V_var <- V[var_idx, var_idx, drop = FALSE]
+    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+    z_hidden <- est_hidden / se_hidden
+    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+    
+    main_effect_df <- data.frame(
+      Term = paste(factor_name, cat, sep = ""),
+      Estimate = est_hidden,
+      `Std. Error` = se_hidden,
+      `z value` = z_hidden,
+      `Pr(>|z|)` = p_hidden,
+      check.names = FALSE
+    )
+  }
   
   if(is.brmsfit(model)==T){
     formula <- model[["formula"]]
@@ -115,11 +133,6 @@ return_hidden_level <- function(model, factor_name) {
       V_var <- V[var_idx, var_idx, drop = FALSE]
     }
     
-    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
-    z_hidden <- est_hidden / se_hidden
-    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-    
     refA <- get_reference_level(model, factorA, devA)
     refB <- get_reference_level(model, factorB, devB)
     
@@ -128,6 +141,28 @@ return_hidden_level <- function(model, factor_name) {
       factorB, refB
     )
     
+    if (is.brmsfit(model)) {
+      posterior <- as_draws_matrix(model)
+      hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+      se_hidden <- sd(hidden_draws)
+      ci <- quantile(hidden_draws, c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
+      interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+        Term = hidden_label,
+        Estimate = round(est_hidden, digits=2),
+        `Est.Error` = round(se_hidden, digits=2),
+        `l-95% CI` = round(lower_hidden, digits=2),
+        `u-95% CI` = round(upper_hidden, digits=2),
+        check.names = FALSE
+      )
+    } else {
+      c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+      se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+      z_hidden <- est_hidden / se_hidden
+      p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+
     interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
       Term = hidden_label,
       Estimate = est_hidden,
@@ -136,6 +171,7 @@ return_hidden_level <- function(model, factor_name) {
       `Pr(>|z|)` = p_hidden,
       check.names = FALSE
     )
+    }
   }
   
   # ---- Handle three-way interactions ----
@@ -185,11 +221,6 @@ return_hidden_level <- function(model, factor_name) {
       V_var <- V[var_idx, var_idx, drop = FALSE]
     }
     
-    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
-    z_hidden <- est_hidden / se_hidden
-    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-    
     refA <- get_reference_level(model, factorA, devA)
     refB <- get_reference_level(model, factorB, devB)
     refC <- get_reference_level(model, factorC, devC)
@@ -200,6 +231,29 @@ return_hidden_level <- function(model, factor_name) {
       factorC, refC
     )
     
+    if (is.brmsfit(model)) {
+      posterior <- as_draws_matrix(model)
+      hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+      se_hidden <- sd(hidden_draws)
+      ci <- quantile(hidden_draws, c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
+      interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+        Term = hidden_label,
+        Estimate = round(est_hidden, digits=2),
+        `Est.Error` = round(se_hidden, digits=2),
+        `l-95% CI` = round(lower_hidden, digits=2),
+        `u-95% CI` = round(upper_hidden, digits=2),
+        check.names = FALSE
+        )
+    } else {
+    
+    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+    z_hidden <- est_hidden / se_hidden
+    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+    
     interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
       Term = hidden_label,
       Estimate = est_hidden,
@@ -208,6 +262,7 @@ return_hidden_level <- function(model, factor_name) {
       `Pr(>|z|)` = p_hidden,
       check.names = FALSE
     )
+    }
   }
   
   # Combine all results
@@ -1333,6 +1388,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
