@@ -20,10 +20,10 @@ return_hidden_level <- function(model, factor_name) {
   if (is.brmsfit(model)) {
     coefs_df <- as.data.frame(coefs)
     var_idx <- which(rownames(coefs_df) %in% target_coef_names)
-    est_hidden <- -sum(coefs_df$Estimate[var_idx])
+    est_hidden <- sum(coefs_df$Estimate[var_idx])
   } else {
     var_idx <- which(names(coefs) %in% target_coef_names)
-    est_hidden <- -sum(coefs[var_idx])
+    est_hidden <- sum(coefs[var_idx])
   }
   
   if (is.brmsfit(model)) {
@@ -124,12 +124,12 @@ return_hidden_level <- function(model, factor_name) {
       coefs_df <- as.data.frame(coefs)
       var_idx <- grep(pattern, rownames(coefs_df))
       if (length(var_idx) == 0) next
-      est_hidden <- -sum(coefs_df$Estimate[var_idx])
+      est_hidden <- sum(coefs_df$Estimate[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     } else {
       var_idx <- grep(pattern, names(coefs))
       if (length(var_idx) == 0) next
-      est_hidden <- -sum(coefs[var_idx])
+      est_hidden <- sum(coefs[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     }
     
@@ -212,12 +212,12 @@ return_hidden_level <- function(model, factor_name) {
       coefs_df <- as.data.frame(coefs)
       var_idx <- grep(pattern, rownames(coefs_df))
       if (length(var_idx) == 0) next
-      est_hidden <- -sum(coefs_df$Estimate[var_idx])
+      est_hidden <- sum(coefs_df$Estimate[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     } else {
       var_idx <- grep(pattern, names(coefs))
       if (length(var_idx) == 0) next
-      est_hidden <- -sum(coefs[var_idx])
+      est_hidden <- sum(coefs[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     }
     
@@ -1388,6 +1388,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
