@@ -227,7 +227,7 @@ return_hidden_level <- function(model, factor_name) {
     
     hidden_label <- paste0(
       factorA, nonrefA, ":",
-      factorB, refB, ":",
+      factorB, nonrefB, ":",
       factorC, refC
     )
     
@@ -1388,6 +1388,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
