@@ -33,10 +33,12 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
         merge_at(i = 2, j = 1:ncol(data), part = "body") %>%
         line_spacing(i = 2, space = 1, part = "body") %>%
         padding(i = 2, padding.top = fontsize*(1/8), padding.bottom = fontsize*(6/8), part = "body") %>% 
-        autofit() %>%
+        autofit() #%>%
         #set_table_properties(layout = "autofit")
-        set_table_properties(layout="fixed", width=1)
-        
+        #set_table_properties(layout="fixed", width=1)
+
+      ft <- set_table_properties(ft, layout = "fixed", width = 1)
+      
       ## ===== INLINE BOLD FOR MODEL & FORMULA =====
       
       formula = brms_model[["formula"]][["formula"]]
@@ -1586,6 +1588,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
