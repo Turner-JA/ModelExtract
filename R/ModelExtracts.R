@@ -194,7 +194,6 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
   message(crayon::green("Saving output to word..."))
   Effects_brms_word(Both, fontsize, filename)
 }
-extract_brms(TaughtSound_RATmod1_brm, fontsize = 5, filename="brmsmod13.docx")
 
 
 return_hidden_level <- function(model, factor_name) {
@@ -1587,6 +1586,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
