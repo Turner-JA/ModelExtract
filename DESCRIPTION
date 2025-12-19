@@ -11,6 +11,12 @@ LazyData: true
 Depends: lmerTest,
          stringr,
          xlsx,
-         crayon
+         crayon,
+         easystats,
+         dplyr,
+         officer,
+         flextable,
+         performance
+
 
 
