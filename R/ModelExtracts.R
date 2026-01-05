@@ -34,6 +34,228 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
         line_spacing(i = 2, space = 1, part = "body") %>%
         padding(i = 2, padding.top = fontsize*(1/8), padding.bottom = fontsize*(6/8), part = "body") %>% 
         autofit() #%>%
+      #set_table_properties(layout = "autofit")
+      #set_table_properties(layout="fixed", width=1)
+      
+      ft <- set_table_properties(ft, layout = "fixed", width = 1)
+      
+      ## ===== INLINE BOLD FOR MODEL & FORMULA =====
+      
+      formula = brms_model[["formula"]][["formula"]]
+      formula_chr = paste(formula[2], formula[1], formula[3])
+      
+      ft <- compose(
+        ft,
+        i = 1, j = 1,
+        value = as_paragraph(
+          as_chunk("Model: ", props = fp_text(bold = TRUE, font.size= fontsize)),
+          as_chunk(model_name)
+        ),
+        part = "body"
+      )
+      
+      ft <- compose(
+        ft,
+        i = 2, j = 1,
+        value = as_paragraph(
+          as_chunk("Formula: ", props = fp_text(bold = TRUE, font.size= fontsize)),
+          as_chunk(formula_chr)
+        ),
+        part = "body"
+      )
+      ## ==========================================
+      
+      if(length(header_rows) > 0) {
+        ft <- bold(ft, i = header_rows, bold = TRUE, part = "body")
+      }
+      
+      std_border <- fp_border(color = "black", width = 1)
+      
+      for (i in header_rows) {
+        if (i > 1) {
+          ft <- border(ft, border.bottom = std_border, part = "body", i = i - 1)
+        }
+        ft <- border(ft, border.top = std_border, part = "body", i = i)
+        ft <- border(ft, border.bottom = std_border, part = "body", i = i)
+      }
+      
+      ft <- border(ft, border.bottom = std_border, part = "body", i = Observations_row - 1)
+      ft <- border(ft, border.top = std_border, part = "body", i = Observations_row)
+      
+      if(length(title_rows) > 0) {
+        ft <- bold(ft, i = title_rows, part = "body") %>%
+          bg(i = title_rows, bg = "#D3D3D3", part = "body")
+        
+        for (i in title_rows) {
+          if (i > 1) {
+            ft <- border(ft, border.bottom = std_border, part = "body", i = i - 1)
+          }
+          ft <- border(ft, border.top = std_border, part = "body", i = i)
+          ft <- border(ft, border.bottom = std_border, part = "body", i = i)
+        }
+      }
+      
+      ft <- border(ft, border.bottom = fp_border(style = "none"), i = nrow(data))
+      ft <- border(ft, border.top = fp_border(style = "double", width = 1), i = 1)
+      
+      return(ft)
+    }
+    doc <- read_docx() %>%
+      body_add_flextable(make_ft_with_internal_titles(Both, fontsize))
+    
+    print(doc, target = file)
+    file
+  }
+  
+  message(crayon::green("Analysing posteriors...(this may take a few minutes)"))
+  ## ===== Start extraction =====
+  posteriors <- describe_posterior(
+    brms_model,
+    effects = "all",
+    component = "all",
+    test = "p_direction",
+    centrality = "all"
+  )
+  
+ # brms_model = ENGSSC_LRTmod12_brm
+  library(tidyr)
+  draws <- as_draws_df(brms_model)
+  draws <- draws %>%
+    select(starts_with("b_")) %>%
+    summarise(across(everything(), sd)) %>%
+    pivot_longer(everything(),
+                 names_to = "Parameter",
+                 values_to = "Est_Error")
+  draws$Est_Error=round(draws$Est_Error, digits = 2)
+  
+  message(crayon::green("Extracting fixed effects"))
+  ## Fixed Effects
+  FEs <- subset(posteriors, Effects == "fixed" & substr(Parameter, 1, 1) == "b")
+  FEs[, 3:11] <- round(FEs[, 3:11], 2)
+  FEs <- subset(FEs, select = -c(Effects, Mean, MAP, CI, Rhat, ESS))
+  names(FEs)[names(FEs) == "Median"] <- "Estimate"
+  rownames(FEs)<-NULL
+  FEs$ID=rownames(FEs)
+  FEs = merge(FEs, draws, by = "Parameter")
+  FEs$ID=as.numeric(as.character(FEs$ID))
+  FEs <- FEs %>%
+    arrange(ID)
+  FEs=subset(FEs, select = -(ID))
+  FEs$Parameter <- substring(FEs$Parameter, 3)
+  FEs$Meaningful <- ""
+  FEs$Meaningful[(FEs$CI_low < 0 & FEs$CI_high < 0) |
+                   (FEs$CI_low > 0 & FEs$CI_high > 0)] <- "✅"
+  
+  FEs[] <- lapply(FEs, format, nsmall = 2)
+  FEs <- FEs %>%
+    relocate(Parameter, Estimate, Est_Error)
+  
+  ## Headers (Model & Formula rows left empty for compose())
+  header0FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
+  header0.5FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
+  header1FE <- data.frame(Parameter = "Fixed Effects", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
+  header2FE <- data.frame(Parameter = "Predictors", Estimate = "Log Odds", Est_Error ="Est. Error",
+                          CI_low = "CI low", CI_high="CI high", pd="pd", Meaningful="Meaningful")
+  FEs <- rbind(header0FE, header0.5FE, header1FE, header2FE, FEs)
+  
+  message(crayon::green("Extracting random effects"))
+  ## Random Effects
+  REs = subset(posteriors, Effects == "random" & substr(posteriors$Parameter, 1, 2)=="sd")
+  REs[, 3:11] = round(REs[, 3:11], digits=2)
+  REs = subset(REs, select = c(Parameter, Median))
+  names(REs)[names(REs)=="Median"]="SD"
+  sigma2_and_ICC = get_sigma2_and_ICC_brms(brms_model)
+  REs$Parameter = substring(REs$Parameter, 4)
+  REs <- REs %>%
+    dplyr::arrange(!grepl("_Intercept", Parameter))
+  REs$Parameter[grepl("_Intercept", REs$Parameter)==T]=paste("τ00", REs$Parameter[grepl("_Intercept", REs$Parameter)==T])
+  REs$Parameter[grepl("_Intercept", REs$Parameter)==F]=paste("τ11", REs$Parameter[grepl("_Intercept", REs$Parameter)==F])
+  REs$Parameter = gsub("__Intercept", "", REs$Parameter)
+  REs$Parameter = gsub("__", ".", REs$Parameter)
+  sigma2 = sigma2_and_ICC$sigma2
+  ICC = sigma2_and_ICC$ICC
+  sigma2row = data.frame(Parameter = "σ2", SD = sigma2)
+  ICCrow = data.frame(Parameter = "ICC", SD = ICC)
+  REs = rbind(sigma2row, REs)
+  REs = rbind(REs, ICCrow)
+  REs$SD=format(REs$SD, nsmall =2)
+  rand_eff <- insight::get_data(brms_model, verbose = FALSE)[, insight::find_random(brms_model, split_nested = TRUE, flatten = TRUE), drop = FALSE]
+  n_re_grps <- sapply(rand_eff, function(.i) length(unique(.i, na.rm = TRUE)))
+  names(n_re_grps) <- sprintf("N %s", names(n_re_grps))
+  reNsDF = as.data.frame(n_re_grps)
+  names(reNsDF)[names(reNsDF)=="n_re_grps"]="SD"
+  reNsDF$Parameter= rownames(reNsDF)
+  REs = rbind(REs, reNsDF)
+  names(REs)[names(REs)=="SD"]="Estimate"
+  for (i in 1: ncol(REs)){
+    REs[, i]=format(REs[, i], nsmall=2)
+  }
+  header1 = data.frame(Parameter = "Random Effects", Estimate = "")
+  header2 = data.frame(Parameter = "Parameter", Estimate = "SD")
+  headers = rbind(header1, header2)
+  REs= rbind(headers, REs)
+  n_obs <- nobs(brms_model)
+  row <- data.frame(Parameter = "Observations", Estimate = n_obs)
+  REs = rbind(REs, row)
+  rsqdummy <- tryCatch(suppressWarnings(performance::r2(brms_model)),
+                       error = function(x) NULL)
+  if (!is.null(rsqdummy)) {
+    row1 <- data.frame(Parameter = "Marginal R2", 
+                       Estimate = round(rsqdummy$R2_Bayes_marginal, digits =3))
+    row2 <- data.frame(Parameter = "Conditional R2", Estimate = round(rsqdummy$R2_Bayes, digits = 3))
+    r2sdf = rbind(row1, row2)
+  }
+  REs = rbind(REs, r2sdf)
+  REs$Est_Error = ""
+  REs$CI_low=""
+  REs$CI_high=""
+  REs$pd=""
+  REs$Meaningful=""
+  
+  Both <- rbind(FEs, REs)
+  
+  message(crayon::green("Saving output to word..."))
+  Effects_brms_word(Both, fontsize, filename)
+}
+
+
+
+Extract_BRMSOLD <- function(brms_model, fontsize, filename){
+  model_name <- deparse(substitute(brms_model))
+  ## Two helper functions:
+  # 1)
+  get_sigma2_and_ICC_brms <- function(brms_model) {
+    if (!inherits(brms_model, "brmsfit")) {
+      stop("This helper expects a 'brmsfit' model.")
+    }
+    vars_brms <- performance::variance_decomposition(brms_model)
+    sig2 <- attr(vars_brms, "var_residual")
+    icc <- vars_brms$ICC_decomposed
+    return(list(sigma2 = round(as.numeric(sig2), 2),
+                ICC = round(as.numeric(icc), 2)))
+  }
+  
+  # 2)
+  Effects_brms_word <- function(Both, fontsize, file = filename) {
+    data = Both
+    make_ft_with_internal_titles <- function(data, fontsize) {
+      
+      header_rows <- which(data$Parameter == "Predictors")
+      title_rows <- which(data$Parameter %in% c("Fixed Effects", "Random Effects"))
+      Observations_row <- which(data$Parameter == "Observations")
+      
+      ft <- flextable(data) %>%
+        delete_part(part = "header") %>% 
+        fontsize(size = fontsize, part = "body") %>%
+        line_spacing(space = 0.3, part = "body") %>%
+        valign(valign = "center", part = "body") %>%
+        padding(padding.top = fontsize*(6/8), padding.bottom = fontsize*(3/8), part = "body") %>%
+        align(j = 1, align = "left", part = "body") %>%
+        align(j = 2:ncol(data), align = "center", part = "body") %>%
+        merge_at(i = 2, j = 1:ncol(data), part = "body") %>%
+        line_spacing(i = 2, space = 1, part = "body") %>%
+        padding(i = 2, padding.top = fontsize*(1/8), padding.bottom = fontsize*(6/8), part = "body") %>% 
+        autofit() #%>%
         #set_table_properties(layout = "autofit")
         #set_table_properties(layout="fixed", width=1)
 
@@ -1588,6 +1810,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
