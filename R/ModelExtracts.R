@@ -1635,6 +1635,7 @@ RanSlope_Tester_Auto <- function(
         n_with_variation <- sum(cluster_sds$meaningful_variation, na.rm = TRUE)
         prop_passing <- n_with_variation / total_clusters
         prop_failing <- 1-prop_passing
+        prop_failing <- format(prop_failing, digits = 3)
         
         msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation: Props_Clusters_Failing = {prop_failing}"), 
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
@@ -1788,7 +1789,7 @@ RanSlope_Tester_Auto <- function(
     row <- combined[i, ]
     rec_colored <- switch(
       as.character(row$Overall_Recommendation),
-      "Impossible" = crayon::red(row$Overall_Recommendation),
+      "Impossible" = crayon::red$bold((row$Overall_Recommendation)),
       "High Risk" = crayon::red(row$Overall_Recommendation),
       "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
       "Low Risk" = crayon::green(row$Overall_Recommendation)
@@ -1810,6 +1811,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
