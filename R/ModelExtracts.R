@@ -121,7 +121,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
   library(tidyr)
   draws <- as_draws_df(brms_model)
   draws <- draws %>%
-    select(starts_with("b_")) %>%
+    dplyr::select(starts_with("b_")) %>%
     summarise(across(everything(), sd)) %>%
     pivot_longer(everything(),
                  names_to = "Parameter",
@@ -1061,6 +1061,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
