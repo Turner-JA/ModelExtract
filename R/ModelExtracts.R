@@ -1637,7 +1637,7 @@ RanSlope_Tester_Auto <- function(
         prop_failing <- 1-prop_passing
         prop_failing <- format(prop_failing, digits = 3)
         
-        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation: Props_Clusters_Failing = {format(prop_failing, digits = 3)}"), 
+        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation: Props_Clusters_Failing = {format(round(prop_failing, nsmall = 3))}"), 
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
         
       } else {
@@ -1675,7 +1675,7 @@ RanSlope_Tester_Auto <- function(
         if (nrow(unbalanced_groups) > 0)
           msg(glue::glue("⚠️ {nrow(unbalanced_groups)} groups are highly unbalanced."), "yellow")
         
-        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance: Prop_Clusters_Failing = {format(prop_failing, digits=3)}"),
+        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance: Prop_Clusters_Failing = {format(round(prop_failing, nsmall = 3))}"),
             ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
       }
       
@@ -1811,6 +1811,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
