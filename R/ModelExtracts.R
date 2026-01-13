@@ -353,11 +353,12 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
 }
 
 
-return_hidden_level <- function(model, factor_name) {
+return_hidden_level <- function(model, factor_name, transform) {
   
   # Get fixed effects coefficients and variance-covariance matrix
   if (is.brmsfit(model)) {
-    coefs <- fixef(model)
+    coefs <- fixef(model, robust=T)
+    coefs_df <-as.data.frame(coefs)
     V <- vcov(model, dpar = "mu")
     dfname = "data"
   } else {
@@ -373,7 +374,6 @@ return_hidden_level <- function(model, factor_name) {
   target_coef_names <- paste0(factor_name, names(test))
   
   if (is.brmsfit(model)) {
-    coefs_df <- as.data.frame(coefs)
     var_idx <- which(rownames(coefs_df) %in% target_coef_names)
     est_hidden <- sum(coefs_df$Estimate[var_idx])
   } else {
@@ -384,19 +384,32 @@ return_hidden_level <- function(model, factor_name) {
   if (is.brmsfit(model)) {
     posterior <- as_draws_matrix(model)
     hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+    
     se_hidden <- sd(hidden_draws)
     ci <- quantile(hidden_draws, c(.025, .975))
     lower_hidden <- unname(ci[1])
     upper_hidden <- unname(ci[2])
     
-    main_effect_df <- data.frame(
-      Term = paste(factor_name, cat, sep = ""),
-      Estimate = round(est_hidden, digits=2),
-      `Est.Error` = round(se_hidden, digits=2),
-      `l-95% CI` = round(lower_hidden, digits=2),
-      `u-95% CI` = round(upper_hidden, digits=2),
-      check.names = FALSE
-    )
+    if (transform == F){
+      main_effect_df <- data.frame(
+        Term = paste(factor_name, cat, sep = ""),
+        Estimate = round(est_hidden, digits=2),
+        `Est.Error` = round(se_hidden, digits=2),
+        `l-95% CI` = round(lower_hidden, digits=2),
+        `u-95% CI` = round(upper_hidden, digits=2),
+        check.names = FALSE
+      )
+    } else if (transform == T){
+      main_effect_df <- data.frame(
+        Term = paste(factor_name, cat, sep = ""),
+        Estimate = round(exp(est_hidden), digits=2),
+        `Est.Error` = round(exp(se_hidden), digits=2),
+        `l-95% CI` = round(exp(lower_hidden), digits=2),
+        `u-95% CI` = round(exp(upper_hidden), digits=2),
+        check.names = FALSE
+      )
+    }
+   
   } else {
     c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
     V_var <- V[var_idx, var_idx, drop = FALSE]
@@ -458,6 +471,7 @@ return_hidden_level <- function(model, factor_name) {
   
   # ---- Handle two-way interactions ----
   for (interaction in two_way) {
+    #interaction = two_way[2]
     factors <- unlist(strsplit(interaction, ":"))
     factorA <- factors[1]
     factorB <- factors[2]
@@ -473,15 +487,27 @@ return_hidden_level <- function(model, factor_name) {
     nonrefB <- get_nonref(levelsB, devB)
     
     # Build regex pattern to find related coef names (account for order in interaction terms)
-    pattern <- paste0("(", factorA, ".*", factorB, ")|(", factorB, ".*", factorA, ")")
+    #pattern <- paste0(
+    #  "(", factorA, ":", factorB, "|", factorB, ":", factorA, ")(?!:)"
+    #)
+    
+    #rownames(coefs)
     
     if (is.brmsfit(model)) {
-      coefs_df <- as.data.frame(coefs)
-      var_idx <- grep(pattern, rownames(coefs_df))
+      #coefs_df <- as.data.frame(coefs)
+      #var_idx <- grep(pattern, rownames(coefs_df))
+      rn <- rownames(coefs_df)
+      var_idx <- which(
+        sapply(strsplit(rn, ":"), length) == 2 &   # exactly two-way
+          grepl(factorA, rn, fixed = TRUE) &
+          grepl(factorB, rn, fixed = TRUE)
+      )
       if (length(var_idx) == 0) next
       est_hidden <- sum(coefs_df$Estimate[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     } else {
+      
+      ## need to update
       var_idx <- grep(pattern, names(coefs))
       if (length(var_idx) == 0) next
       est_hidden <- sum(coefs[var_idx])
@@ -499,38 +525,54 @@ return_hidden_level <- function(model, factor_name) {
     if (is.brmsfit(model)) {
       posterior <- as_draws_matrix(model)
       hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+      #if (transform == T){
+      #  hidden_draws = exp(hidden_draws)
+      #}
       se_hidden <- sd(hidden_draws)
       ci <- quantile(hidden_draws, c(.025, .975))
       lower_hidden <- unname(ci[1])
       upper_hidden <- unname(ci[2])
       
-      interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
-        Term = hidden_label,
-        Estimate = round(est_hidden, digits=2),
-        `Est.Error` = round(se_hidden, digits=2),
-        `l-95% CI` = round(lower_hidden, digits=2),
-        `u-95% CI` = round(upper_hidden, digits=2),
-        check.names = FALSE
-      )
+      if (transform == F){
+        interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
+          check.names = FALSE
+        )
+      } else if (transform == T){
+        interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(exp(est_hidden), digits=2),
+          `Est.Error` = round(exp(se_hidden), digits=2),
+          `l-95% CI` = round(exp(lower_hidden), digits=2),
+          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          check.names = FALSE
+        )
+      }
+      
     } else {
       c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
       se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
       z_hidden <- est_hidden / se_hidden
       p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-
-    interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
-      Term = hidden_label,
-      Estimate = est_hidden,
-      `Std. Error` = se_hidden,
-      `z value` = z_hidden,
-      `Pr(>|z|)` = p_hidden,
-      check.names = FALSE
-    )
+      
+      interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+        Term = hidden_label,
+        Estimate = est_hidden,
+        `Std. Error` = se_hidden,
+        `z value` = z_hidden,
+        `Pr(>|z|)` = p_hidden,
+        check.names = FALSE
+      )
     }
   }
   
   # ---- Handle three-way interactions ----
   for (interaction in three_way) {
+    #interaction = three_way[1]
     factors <- unlist(strsplit(interaction, ":"))
     factorA <- factors[1]
     factorB <- factors[2]
@@ -548,29 +590,32 @@ return_hidden_level <- function(model, factor_name) {
     nonrefB <- get_nonref(levelsB, devB)
     nonrefC <- get_nonref(levelsC, devC)
     
-    # Create all combinations of the three factors' levels (excluding refs)
-    interaction_names <- as.vector(outer(
-      paste0(factorA, nonrefA),
-      paste0(factorB, nonrefB),
-      FUN = function(a, b) paste(a, b, sep = ":")
-    ))
-    interaction_names <- as.vector(outer(
-      interaction_names,
-      paste0(factorC, nonrefC),
-      FUN = function(ab, c) paste(ab, c, sep = ":")
-    ))
-    
-    # Regex pattern to match coefficients (exact matching)
-    pattern <- paste(interaction_names, collapse = "|")
-    
     if (is.brmsfit(model)) {
-      coefs_df <- as.data.frame(coefs)
-      var_idx <- grep(pattern, rownames(coefs_df))
+      #coefs_df <- as.data.frame(coefs)
+      rn <- rownames(coefs_df)
+      
+      var_idx <- which(
+        sapply(strsplit(rn, ":"), length) == 3 &   # exactly three-way
+          grepl(factorA, rn, fixed = TRUE) &
+          grepl(factorB, rn, fixed = TRUE) &
+          grepl(factorC, rn, fixed = TRUE)
+      )
+      
       if (length(var_idx) == 0) next
       est_hidden <- sum(coefs_df$Estimate[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
+      
     } else {
-      var_idx <- grep(pattern, names(coefs))
+      ## Need to test non brms
+      rn <- names(coefs)
+      
+      var_idx <- which(
+        sapply(strsplit(rn, ":"), length) == 3 &   # exactly three-way
+          grepl(factorA, rn, fixed = TRUE) &
+          grepl(factorB, rn, fixed = TRUE) &
+          grepl(factorC, rn, fixed = TRUE)
+      )
+      
       if (length(var_idx) == 0) next
       est_hidden <- sum(coefs[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
@@ -594,29 +639,41 @@ return_hidden_level <- function(model, factor_name) {
       lower_hidden <- unname(ci[1])
       upper_hidden <- unname(ci[2])
       
+      if(transform == F){
+        interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
+          check.names = FALSE
+        ) 
+      } else if (transform == T){
+        interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(exp(est_hidden), digits=2),
+          `Est.Error` = round(exp(se_hidden), digits=2),
+          `l-95% CI` = round(exp(lower_hidden), digits=2),
+          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          check.names = FALSE
+        )
+      }
+      
+    } else {
+      
+      c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
+      se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
+      z_hidden <- est_hidden / se_hidden
+      p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
+      
       interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
         Term = hidden_label,
-        Estimate = round(est_hidden, digits=2),
-        `Est.Error` = round(se_hidden, digits=2),
-        `l-95% CI` = round(lower_hidden, digits=2),
-        `u-95% CI` = round(upper_hidden, digits=2),
+        Estimate = est_hidden,
+        `Std. Error` = se_hidden,
+        `z value` = z_hidden,
+        `Pr(>|z|)` = p_hidden,
         check.names = FALSE
-        )
-    } else {
-    
-    c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
-    se_hidden <- sqrt(t(c_vec) %*% V_var %*% c_vec)
-    z_hidden <- est_hidden / se_hidden
-    p_hidden <- 2 * (1 - pnorm(abs(z_hidden)))
-    
-    interaction_dfs[[length(interaction_dfs) + 1]] <- data.frame(
-      Term = hidden_label,
-      Estimate = est_hidden,
-      `Std. Error` = se_hidden,
-      `z value` = z_hidden,
-      `Pr(>|z|)` = p_hidden,
-      check.names = FALSE
-    )
+      )
     }
   }
   
@@ -627,6 +684,46 @@ return_hidden_level <- function(model, factor_name) {
   } else {
     return(main_effect_df)
   }
+}
+
+get_terms_chr <- function(formula) {
+  # Convert formula to terms object
+  tf <- terms(formula)
+  
+  # Get the fixed-effect terms (main and interactions) as strings
+  fixed_terms <- attr(tf, "term.labels")
+  
+  # Extract random effects terms (like (1|group), (var|id)) as character strings
+  # by parsing the right side of the formula manually
+  
+  # Get RHS of formula as character
+  rhs <- deparse(formula[[3]])
+  
+  # Find all random effects terms in parentheses with '|'
+  # Regex explanation:
+  # \\([^\\)]+\\|[^\\)]+\\)  = match (...) that contains a '|' inside
+  rand_terms <- gregexpr("\\([^\\)]+\\|[^\\)]+\\)", rhs, perl = TRUE)
+  rand_matches <- regmatches(rhs, rand_terms)[[1]]
+  
+  # Remove parentheses around random effects terms
+  rand_terms_clean <- gsub("^\\(|\\)$", "", rand_matches)
+  
+  # Also find intercept-only random effects (e.g. (1|Item))
+  # But they are included in the above regex already
+  
+  # Get interaction terms explicitly (not always included)
+  # But attr(tf, "term.labels") already includes interactions separated by ':'
+  
+  # Combine fixed and random effect terms
+  all_terms <- c(fixed_terms, rand_terms_clean)
+  
+  # Optionally: include main effects from random terms separately
+  # but your example keeps random terms as is, so skip that
+  
+  # Sort terms alphabetically or keep original order (optional)
+  # all_terms <- sort(all_terms)
+  
+  return(all_terms)
 }
 
 get_terms_chr <- function(formula) {
@@ -1195,6 +1292,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
