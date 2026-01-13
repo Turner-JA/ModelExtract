@@ -1,4 +1,4 @@
-Extract_BRMS <- function(brms_model, fontsize, filename){
+Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   model_name <- deparse(substitute(brms_model))
   ## Two helper functions:
   # 1)
@@ -15,12 +15,20 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
   
   # 2)
   Effects_brms_word <- function(Both, fontsize, file = filename) {
+
     data = Both
+    
     make_ft_with_internal_titles <- function(data, fontsize) {
       
       header_rows <- which(data$Parameter == "Predictors")
       title_rows <- which(data$Parameter %in% c("Fixed Effects", "Random Effects"))
       Observations_row <- which(data$Parameter == "Observations")
+      CrI_low_col <- which(names(data) == "CI_low")
+      CrI_high_col <- which(names(data) == "CI_high")
+      n_cols <- ncol(data)
+      all_cols <- seq_len(n_cols)
+      cri_cols <- CrI_low_col:CrI_high_col
+      other_cols <- setdiff(all_cols, cri_cols)
       
       ft <- flextable(data) %>%
         delete_part(part = "header") %>% 
@@ -31,6 +39,13 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
         align(j = 1, align = "left", part = "body") %>%
         align(j = 2:ncol(data), align = "center", part = "body") %>%
         merge_at(i = 2, j = 1:ncol(data), part = "body") %>%
+        merge_at(i= header_rows, j = CrI_low_col:CrI_high_col, part = "body") %>%
+        compose(
+          i = header_rows,
+          j = CrI_low_col,
+          part = "body",
+          value = as_paragraph("95% CrI")
+        ) %>%
         line_spacing(i = 2, space = 1, part = "body") %>%
         padding(i = 2, padding.top = fontsize*(1/8), padding.bottom = fontsize*(6/8), part = "body") %>% 
         autofit() #%>%
@@ -38,6 +53,31 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
       #set_table_properties(layout="fixed", width=1)
       
       ft <- set_table_properties(ft, layout = "fixed", width = 1)
+      
+      colwidths = ft[["body"]][["colwidths"]]
+      colwidths
+      padding = ft
+      CrI_low_col_width <- ft[["body"]][["colwidths"]]["CI_low"]
+      CrI_dash_col_width <- ft[["body"]][["colwidths"]]["dash"]
+      CrI_high_col_width <- ft[["body"]][["colwidths"]]["CI_high"]
+      
+      ft <- ft %>%
+      width(j = CrI_low_col, width = CrI_low_col_width*0.8) %>%
+      width(j = CrI_low_col+1, width = CrI_dash_col_width*0.4) %>%
+      width(j = CrI_high_col, width = CrI_high_col_width*0.8)
+      
+      colwidths = ft[["body"]][["colwidths"]]
+      colwidths
+      
+      ft <- ft %>%
+      align(j = CrI_low_col, align = "right", part = "body") %>%
+      align(j = CrI_high_col, align = "left", part = "body") %>%
+      align(i=header_rows, j = CrI_low_col, align = "center", part = "body")
+        
+      ft <- ft %>% 
+        padding(j = CrI_low_col, padding.left = 5, padding.right = 1, part = "body") %>%
+        padding(j = CrI_low_col+1, padding.left = 1, padding.right = 1, part = "body") %>%
+        padding(j = CrI_high_col, padding.left = 1, padding.right = 5, part = "body")
       
       ## ===== INLINE BOLD FOR MODEL & FORMULA =====
       
@@ -106,6 +146,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
     print(doc, target = file)
     file
   }
+  Effects_brms_word(Both, fontsize, filename)
   
   message(crayon::green("Analysing posteriors...(this may take a few minutes)"))
   ## ===== Start extraction =====
@@ -116,22 +157,50 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
     test = "p_direction",
     centrality = "all"
   )
+  posteriors$OR = exp(posteriors$Median)
+  posteriors$CI_low_OR <- exp(posteriors$CI_low)
+  posteriors$CI_high_OR <- exp(posteriors$CI_high)
   
- # brms_model = ENGSSC_LRTmod12_brm
+  posteriors <<- posteriors
+  #CI <- quantile(draws$b_Time_PointTime2, probs = c(0.025, 0.975))
+  #OR_CI= exp(CI)
+  #draws$b_Time_PointTime2_OR = exp(draws$b_Time_PointTime2)
+  #sd(draws$b_Time_PointTime2_OR)
+  #OR_CI2 <- quantile(draws$b_Time_PointTime2_OR, probs = c(0.025, 0.975))
+  
+  
   library(tidyr)
   draws <- as_draws_df(brms_model)
-  draws <- draws %>%
+  #mean(draws$b_Time_PointTime2)
+  
+  #sd(draws$b_Time_PointTime2)
+  
+  draws2 <- draws %>%
     dplyr::select(starts_with("b_")) %>%
-    summarise(across(everything(), sd)) %>%
+    dplyr::summarise(across(everything(), sd)) %>%
     pivot_longer(everything(),
                  names_to = "Parameter",
                  values_to = "Est_Error")
-  draws$Est_Error=round(draws$Est_Error, digits = 2)
+  draws2$Est_Error=round(draws2$Est_Error, digits = 2)
+  
+  draws3 <- draws %>%
+    dplyr::select(starts_with("b_")) %>%
+    dplyr::mutate(across(everything(), exp)) %>%
+    dplyr::summarise(across(everything(), sd)) %>%
+    pivot_longer(
+      everything(),
+      names_to = "Parameter",
+      values_to = "Est_Error_OR"
+    )
+  
+  draws3$Est_Error_OR <- round(draws3$Est_Error_OR, 2)
+  
+  draws = merge(draws2, draws3, by = "Parameter")
   
   message(crayon::green("Extracting fixed effects"))
   ## Fixed Effects
   FEs <- subset(posteriors, Effects == "fixed" & substr(Parameter, 1, 1) == "b")
-  FEs[, 3:11] <- round(FEs[, 3:11], 2)
+  FEs[, 3:14] <- round(FEs[, 3:14], 2)
   FEs <- subset(FEs, select = -c(Effects, Mean, MAP, CI, Rhat, ESS))
   names(FEs)[names(FEs) == "Median"] <- "Estimate"
   rownames(FEs)<-NULL
@@ -147,16 +216,66 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
                    (FEs$CI_low > 0 & FEs$CI_high > 0)] <- "✅"
   
   FEs[] <- lapply(FEs, format, nsmall = 2)
+  #transform = TRUE
+  if (transform == FALSE){
+    FEs <- FEs %>%
+      relocate(Parameter, Estimate, Est_Error)
+    FEs = subset(FEs, select = -c(OR, CI_low_OR, CI_high_OR, Est_Error_OR))
+  } else if (transform == TRUE){
+    FEs <- FEs %>%
+      relocate(Parameter, OR, Est_Error_OR, CI_low_OR, CI_high_OR)
+    FEs = subset(FEs, select = -c(Estimate, Est_Error, CI_low, CI_high))
+    names(FEs)[names(FEs)=="OR"]="Estimate"
+    names(FEs)[names(FEs)=="Est_Error_OR"]="Est_Error"
+    names(FEs)[names(FEs)=="CI_low_OR"]="CI_low"
+    names(FEs)[names(FEs)=="CI_high_OR"]="CI_high"
+  }
+  
+  #FEs$CrI = paste(FEs$CI_low, "–", FEs$CI_high, sep="")
+  #FEs$CrI = gsub(" ", "", FEs$CrI)
+  #FEs$CrI = gsub("–", " – ", FEs$CrI)
+  #FEs = subset(FEs, select = -c(CI_low, CI_high))
+  #FEs <- FEs %>%
+  #  relocate(Parameter, Estimate, Est_Error, CrI)
+  FEs$dash = "–"
   FEs <- FEs %>%
-    relocate(Parameter, Estimate, Est_Error)
+   relocate(Parameter, Estimate, Est_Error, CI_low, dash, CI_high)
+  
+  sapply(FEs, class)
+  
+  FEs$CI_low <- trimws(FEs$CI_low, which = "left")
+  before_decimal <- sapply(strsplit(FEs$CI_low, "\\."), `[`, 1)
+  lengths_before_decimal <- nchar(before_decimal)
+  max_length <- max(lengths_before_decimal, na.rm=T)
+  FEs$CI_low <- mapply(function(x, len) {
+    spaces_needed <- max_length - len
+    paste0(strrep(" ", spaces_needed), x)
+  }, FEs$CI_low, lengths_before_decimal)
+  
+  FEs$CI_high <- trimws(FEs$CI_high, which = "left")
+  before_decimal <- sapply(strsplit(FEs$CI_high, "\\."), `[`, 1)
+  lengths_before_decimal <- nchar(before_decimal)
+  max_length <- max(lengths_before_decimal, na.rm =T)
+  FEs$CI_high <- mapply(function(x, len) {
+    spaces_needed <- max_length - len
+    paste0(strrep("  ", spaces_needed), x)
+  }, FEs$CI_high, lengths_before_decimal)
+  
   
   ## Headers (Model & Formula rows left empty for compose())
-  header0FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
-  header0.5FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
-  header1FE <- data.frame(Parameter = "Fixed Effects", Estimate = "", Est_Error="", CI_low = "", CI_high="", pd="", Meaningful="")
-  header2FE <- data.frame(Parameter = "Predictors", Estimate = "Log Odds", Est_Error ="Est. Error",
-                          CI_low = "CI low", CI_high="CI high", pd="pd", Meaningful="Meaningful")
+  header0FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", dash="", CI_high="", pd="", Meaningful="")
+  header0.5FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", dash="", CI_high="", pd="", Meaningful="")
+  header1FE <- data.frame(Parameter = "Fixed Effects", Estimate = "", Est_Error="", CI_low = "", dash="", CI_high="", pd="", Meaningful="")
+  if (transform == FALSE){
+    header2FE <- data.frame(Parameter = "Predictors", Estimate = "Log Odds", Est_Error ="Est. Error",
+                            CI_low = "CrI low", dash="–", CI_high="CrI high", pd="pd", Meaningful="Meaningful")
+  } else if (transform == TRUE) {
+    header2FE <- data.frame(Parameter = "Predictors", Estimate = "Odds Ratio", Est_Error ="Est. Error",
+                            CI_low = "CrI low", dash="–", CI_high="CrI high", pd="pd", Meaningful="Meaningful")
+  }
+  
   FEs <- rbind(header0FE, header0.5FE, header1FE, header2FE, FEs)
+  
   
   message(crayon::green("Extracting random effects"))
   ## Random Effects
@@ -191,9 +310,9 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
     REs[, i]=format(REs[, i], nsmall=2)
   }
   header1 = data.frame(Parameter = "Random Effects", Estimate = "")
-  header2 = data.frame(Parameter = "Parameter", Estimate = "SD")
-  headers = rbind(header1, header2)
-  REs= rbind(headers, REs)
+  #header2 = data.frame(Parameter = "Parameter", Estimate = "SD")
+  #headers = rbind(header1, header2)
+  REs= rbind(header1, REs)
   n_obs <- nobs(brms_model)
   row <- data.frame(Parameter = "Observations", Estimate = n_obs)
   REs = rbind(REs, row)
@@ -208,12 +327,13 @@ Extract_BRMS <- function(brms_model, fontsize, filename){
   REs = rbind(REs, r2sdf)
   REs$Est_Error = ""
   REs$CI_low=""
+  REs$dash=""
   REs$CI_high=""
   REs$pd=""
   REs$Meaningful=""
   
   Both <- rbind(FEs, REs)
-  
+
   message(crayon::green("Saving output to word..."))
   Effects_brms_word(Both, fontsize, filename)
 }
@@ -1061,6 +1181,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
