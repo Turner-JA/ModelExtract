@@ -15,7 +15,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   
   # 2)
   Effects_brms_word <- function(Both, fontsize, file = filename) {
-
+    
     data = Both
     
     make_ft_with_internal_titles <- function(data, fontsize) {
@@ -54,26 +54,26 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
       
       ft <- set_table_properties(ft, layout = "fixed", width = 1)
       
-      colwidths = ft[["body"]][["colwidths"]]
-      colwidths
-      padding = ft
+      #colwidths = ft[["body"]][["colwidths"]]
+      #colwidths
+      #padding = ft
       CrI_low_col_width <- ft[["body"]][["colwidths"]]["CI_low"]
       CrI_dash_col_width <- ft[["body"]][["colwidths"]]["dash"]
       CrI_high_col_width <- ft[["body"]][["colwidths"]]["CI_high"]
       
       ft <- ft %>%
-      width(j = CrI_low_col, width = CrI_low_col_width*0.8) %>%
-      width(j = CrI_low_col+1, width = CrI_dash_col_width*0.4) %>%
-      width(j = CrI_high_col, width = CrI_high_col_width*0.8)
+        width(j = CrI_low_col, width = CrI_low_col_width*0.8) %>%
+        width(j = CrI_low_col+1, width = CrI_dash_col_width*0.4) %>%
+        width(j = CrI_high_col, width = CrI_high_col_width*0.8)
       
-      colwidths = ft[["body"]][["colwidths"]]
-      colwidths
+      #colwidths = ft[["body"]][["colwidths"]]
+      #colwidths
       
       ft <- ft %>%
-      align(j = CrI_low_col, align = "right", part = "body") %>%
-      align(j = CrI_high_col, align = "left", part = "body") %>%
-      align(i=header_rows, j = CrI_low_col, align = "center", part = "body")
-        
+        align(j = CrI_low_col, align = "right", part = "body") %>%
+        align(j = CrI_high_col, align = "left", part = "body") %>%
+        align(i=header_rows, j = CrI_low_col, align = "center", part = "body")
+      
       ft <- ft %>% 
         padding(j = CrI_low_col, padding.left = 5, padding.right = 1, part = "body") %>%
         padding(j = CrI_low_col+1, padding.left = 1, padding.right = 1, part = "body") %>%
@@ -105,11 +105,21 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
       )
       ## ==========================================
       
+      
+      
       if(length(header_rows) > 0) {
-        ft <- bold(ft, i = header_rows, bold = TRUE, part = "body")
+        ft <- flextable::bold(ft, i = header_rows, bold = TRUE, part = "body")
       }
       
+      #if(length(header_rows) > 0) {
+      #  ft <- bold(ft, i = header_rows, bold = TRUE, part = "body")
+      #}
+      
+      #class(ft)
+      
       std_border <- fp_border(color = "black", width = 1)
+      
+      #class(ft)
       
       for (i in header_rows) {
         if (i > 1) {
@@ -118,6 +128,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
         ft <- border(ft, border.top = std_border, part = "body", i = i)
         ft <- border(ft, border.bottom = std_border, part = "body", i = i)
       }
+      
       
       ft <- border(ft, border.bottom = std_border, part = "body", i = Observations_row - 1)
       ft <- border(ft, border.top = std_border, part = "body", i = Observations_row)
@@ -160,7 +171,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   posteriors$CI_low_OR <- exp(posteriors$CI_low)
   posteriors$CI_high_OR <- exp(posteriors$CI_high)
   
-  posteriors <<- posteriors
+  #posteriors <<- posteriors
   #CI <- quantile(draws$b_Time_PointTime2, probs = c(0.025, 0.975))
   #OR_CI= exp(CI)
   #draws$b_Time_PointTime2_OR = exp(draws$b_Time_PointTime2)
@@ -1180,6 +1191,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
