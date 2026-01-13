@@ -134,7 +134,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
       ft <- border(ft, border.top = std_border, part = "body", i = Observations_row)
       
       if(length(title_rows) > 0) {
-        ft <- bold(ft, i = title_rows, part = "body") %>%
+        ft <- flextable::bold(ft, i = title_rows, part = "body") %>%
           bg(i = title_rows, bg = "#D3D3D3", part = "body")
         
         for (i in title_rows) {
@@ -171,7 +171,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   posteriors$CI_low_OR <- exp(posteriors$CI_low)
   posteriors$CI_high_OR <- exp(posteriors$CI_high)
   
-  #posteriors <<- posteriors
+  posteriors <<- posteriors
   #CI <- quantile(draws$b_Time_PointTime2, probs = c(0.025, 0.975))
   #OR_CI= exp(CI)
   #draws$b_Time_PointTime2_OR = exp(draws$b_Time_PointTime2)
@@ -249,28 +249,28 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   #  relocate(Parameter, Estimate, Est_Error, CrI)
   FEs$dash = "–"
   FEs <- FEs %>%
-   relocate(Parameter, Estimate, Est_Error, CI_low, dash, CI_high)
+    relocate(Parameter, Estimate, Est_Error, CI_low, dash, CI_high)
   
   sapply(FEs, class)
   
-  FEs$CI_low <- trimws(FEs$CI_low, which = "left")
-  before_decimal <- sapply(strsplit(FEs$CI_low, "\\."), `[`, 1)
-  lengths_before_decimal <- nchar(before_decimal)
-  max_length <- max(lengths_before_decimal, na.rm=T)
-  FEs$CI_low <- mapply(function(x, len) {
-    spaces_needed <- max_length - len
-    paste0(strrep(" ", spaces_needed), x)
-  }, FEs$CI_low, lengths_before_decimal)
+  pad_left_to_decimal <- function(vec, pad_char = "  ") {
+    vec <- trimws(vec, which = "left")
+    before_decimal <- sapply(strsplit(vec, "\\."), `[`, 1)
+    lengths_before_decimal <- nchar(before_decimal)
+    max_length <- max(lengths_before_decimal, na.rm = TRUE)
+    
+    mapply(function(x, len) {
+      spaces_needed <- max_length - len
+      paste0(strrep(pad_char, spaces_needed), x)
+    }, vec, lengths_before_decimal, USE.NAMES = FALSE)
+  }
   
-  FEs$CI_high <- trimws(FEs$CI_high, which = "left")
-  before_decimal <- sapply(strsplit(FEs$CI_high, "\\."), `[`, 1)
-  lengths_before_decimal <- nchar(before_decimal)
-  max_length <- max(lengths_before_decimal, na.rm =T)
-  FEs$CI_high <- mapply(function(x, len) {
-    spaces_needed <- max_length - len
-    paste0(strrep("  ", spaces_needed), x)
-  }, FEs$CI_high, lengths_before_decimal)
-  
+  # Then apply to your columns:
+  FEs$Estimate <- pad_left_to_decimal(FEs$Estimate)
+  FEs$Est_Error <- pad_left_to_decimal(FEs$Est_Error)
+  FEs$CI_low <- pad_left_to_decimal(FEs$CI_low)
+  FEs$CI_high <- pad_left_to_decimal(FEs$CI_high)  # double spaces as in original
+  FEs$pd <- pad_left_to_decimal(FEs$pd)
   
   ## Headers (Model & Formula rows left empty for compose())
   header0FE <- data.frame(Parameter = "", Estimate = "", Est_Error="", CI_low = "", dash="", CI_high="", pd="", Meaningful="")
@@ -308,6 +308,8 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   REs = rbind(sigma2row, REs)
   REs = rbind(REs, ICCrow)
   REs$SD=format(REs$SD, nsmall =2)
+  REs$SD <- pad_left_to_decimal(REs$SD)
+  
   rand_eff <- insight::get_data(brms_model, verbose = FALSE)[, insight::find_random(brms_model, split_nested = TRUE, flatten = TRUE), drop = FALSE]
   n_re_grps <- sapply(rand_eff, function(.i) length(unique(.i, na.rm = TRUE)))
   names(n_re_grps) <- sprintf("N %s", names(n_re_grps))
@@ -319,6 +321,7 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   for (i in 1: ncol(REs)){
     REs[, i]=format(REs[, i], nsmall=2)
   }
+
   header1 = data.frame(Parameter = "Random Effects", Estimate = "")
   #header2 = data.frame(Parameter = "Parameter", Estimate = "SD")
   #headers = rbind(header1, header2)
@@ -343,7 +346,8 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   REs$Meaningful=""
   
   Both <- rbind(FEs, REs)
-
+  rownames(Both)<-NULL
+  
   message(crayon::green("Saving output to word..."))
   Effects_brms_word(Both, fontsize, filename)
 }
@@ -1191,6 +1195,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
