@@ -146,7 +146,6 @@ Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
     print(doc, target = file)
     file
   }
-  Effects_brms_word(Both, fontsize, filename)
   
   message(crayon::green("Analysing posteriors...(this may take a few minutes)"))
   ## ===== Start extraction =====
@@ -1181,6 +1180,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
