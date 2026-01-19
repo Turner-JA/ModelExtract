@@ -375,18 +375,20 @@ return_hidden_level <- function(model, factor_name, transform) {
   
   if (is.brmsfit(model)) {
     var_idx <- which(rownames(coefs_df) %in% target_coef_names)
-    est_hidden <- sum(coefs_df$Estimate[var_idx])
+    #est_hidden <- sum(coefs_df$Estimate[var_idx])
   } else {
     var_idx <- which(names(coefs) %in% target_coef_names)
-    est_hidden <- sum(coefs[var_idx])
   }
   
   if (is.brmsfit(model)) {
     posterior <- as_draws_matrix(model)
-    hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
+    hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+    hidden_draws1=as.data.frame(hidden_draws1)
+    hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
     
-    se_hidden <- sd(hidden_draws)
-    ci <- quantile(hidden_draws, c(.025, .975))
+    est_hidden = median(hidden_draws1$b_hidden)
+    se_hidden <- sd(hidden_draws1$b_hidden)
+    ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
     lower_hidden <- unname(ci[1])
     upper_hidden <- unname(ci[2])
     
@@ -409,7 +411,7 @@ return_hidden_level <- function(model, factor_name, transform) {
         check.names = FALSE
       )
     }
-   
+
   } else {
     c_vec <- matrix(rep(-1, length(var_idx)), ncol = 1)
     V_var <- V[var_idx, var_idx, drop = FALSE]
@@ -486,11 +488,6 @@ return_hidden_level <- function(model, factor_name, transform) {
     nonrefA <- get_nonref(levelsA, devA)
     nonrefB <- get_nonref(levelsB, devB)
     
-    # Build regex pattern to find related coef names (account for order in interaction terms)
-    #pattern <- paste0(
-    #  "(", factorA, ":", factorB, "|", factorB, ":", factorA, ")(?!:)"
-    #)
-    
     #rownames(coefs)
     
     if (is.brmsfit(model)) {
@@ -503,14 +500,14 @@ return_hidden_level <- function(model, factor_name, transform) {
           grepl(factorB, rn, fixed = TRUE)
       )
       if (length(var_idx) == 0) next
-      est_hidden <- sum(coefs_df$Estimate[var_idx])
+      #est_hidden <- sum(coefs_df$Estimate[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     } else {
       
       ## need to update
       var_idx <- grep(pattern, names(coefs))
       if (length(var_idx) == 0) next
-      est_hidden <- sum(coefs[var_idx])
+      #est_hidden <- sum(coefs[var_idx])
       V_var <- V[var_idx, var_idx, drop = FALSE]
     }
     
@@ -524,12 +521,13 @@ return_hidden_level <- function(model, factor_name, transform) {
     
     if (is.brmsfit(model)) {
       posterior <- as_draws_matrix(model)
-      hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
-      #if (transform == T){
-      #  hidden_draws = exp(hidden_draws)
-      #}
-      se_hidden <- sd(hidden_draws)
-      ci <- quantile(hidden_draws, c(.025, .975))
+      hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+      hidden_draws1=as.data.frame(hidden_draws1)
+      hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
+      
+      est_hidden = median(hidden_draws1$b_hidden)
+      se_hidden <- sd(hidden_draws1$b_hidden)
+      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
       lower_hidden <- unname(ci[1])
       upper_hidden <- unname(ci[2])
       
@@ -633,9 +631,13 @@ return_hidden_level <- function(model, factor_name, transform) {
     
     if (is.brmsfit(model)) {
       posterior <- as_draws_matrix(model)
-      hidden_draws <- -rowSums(posterior[, var_idx, drop = FALSE])
-      se_hidden <- sd(hidden_draws)
-      ci <- quantile(hidden_draws, c(.025, .975))
+      hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+      hidden_draws1=as.data.frame(hidden_draws1)
+      hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
+      
+      est_hidden = median(hidden_draws1$b_hidden)
+      se_hidden <- sd(hidden_draws1$b_hidden)
+      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
       lower_hidden <- unname(ci[1])
       upper_hidden <- unname(ci[2])
       
@@ -685,6 +687,7 @@ return_hidden_level <- function(model, factor_name, transform) {
     return(main_effect_df)
   }
 }
+
 
 get_terms_chr <- function(formula) {
   # Convert formula to terms object
@@ -1292,6 +1295,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
