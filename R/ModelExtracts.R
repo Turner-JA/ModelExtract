@@ -1,23 +1,11 @@
 return_hidden_level_LMER <- function(model, factor_name, transform = NULL) {
-  library(brms)
+library(brms)
   
-  # Get fixed effects coefficients and variance-covariance matrix
-  if (is.brmsfit(model)) {
-    coefs <- fixef(model, robust = TRUE)
-    coefs_df <- as.data.frame(coefs)
-    V <- vcov(model, dpar = "mu")
-    dfname <- "data"
-  } else if (isGLMM(model)) {
-    coefs <- fixef(model)
-    coefs_df <- as.data.frame(coefs)
-    V <- vcov(model)
-    dfname <- "data"
-  } else {
-    # Default to fixef and vcov for other models
-    coefs <- fixef(model)
-    coefs_df <- as.data.frame(coefs)
-    V <- vcov(model, dpar = "mu")
-  }
+# Default to fixef and vcov for other models
+coefs <- fixef(model)
+coefs_df <- as.data.frame(coefs)
+V <- vcov(model, dpar = "mu")
+
   
   # Extract contrasts for the factor to find hidden reference level
   test <- as.data.frame(attr(model.frame(model)[[factor_name]], "contrasts"))
@@ -1533,6 +1521,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
