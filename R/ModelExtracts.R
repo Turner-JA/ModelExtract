@@ -21,8 +21,12 @@ library(brms)
     }
   }
   
-  get_reference_level <- function(model, factor_name, tol = 1e-8) {
-    f <- model@frame[[factor_name]]
+    get_reference_level <- function(model, factor_name, tol = 1e-8) {
+    if (is.brmsfit(model)==T){
+      f <- brms_model[["data"]][[factor_name]] 
+    } else if (isLMM(model)==T){
+      f <- model@frame[[factor_name]]
+    }
     if (!is.factor(f)) stop(factor_name, " is not a factor")
     levels_factor <- levels(f)
     contr <- attr(f, "contrasts")
@@ -235,6 +239,7 @@ V <- vcov(model, dpar = "mu")
   return(final_df)
 }
 
+
 return_hidden_level_BRMS <- function(model, factor_name, transform) {
   library(brms) 
   
@@ -277,14 +282,10 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
   #### Start of actual function ####
   
   # Get fixed effects coefficients and variance-covariance matrix
-  if (is.brmsfit(model)) {
-    coefs <- fixef(model, robust=T)
-    coefs_df <-as.data.frame(coefs)
-    V <- vcov(model, dpar = "mu")
-    dfname = "data"
-  } else {
-    print("Wrong model type")
-  }
+  coefs <- fixef(model, robust=T)
+  coefs_df <-as.data.frame(coefs)
+  V <- vcov(model, dpar = "mu")
+  dfname = "data"
   
   # Get contrasts for the factor to find the missing (hidden) level
   
@@ -299,13 +300,13 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
   hidden_draws1=as.data.frame(hidden_draws1)
   hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
     
-  est_hidden = median(hidden_draws1$b_hidden)
-  se_hidden <- sd(hidden_draws1$b_hidden)
-  ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
-  lower_hidden <- unname(ci[1])
-  upper_hidden <- unname(ci[2])
-    
     if (transform == F){
+      est_hidden = median(hidden_draws1$b_hidden)
+      se_hidden <- sd(hidden_draws1$b_hidden)
+      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
       main_effect_df <- data.frame(
         Term = paste(factor_name, cat, sep = ""),
         Estimate = round(est_hidden, digits=2),
@@ -315,17 +316,22 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
         check.names = FALSE
       )
     } else if (transform == T){
+      est_hidden = median(exp(hidden_draws1$b_hidden))
+      se_hidden <- sd(exp(hidden_draws1$b_hidden))
+      ci <- quantile(exp(hidden_draws1$b_hidden), c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
       main_effect_df <- data.frame(
         Term = paste(factor_name, cat, sep = ""),
-        Estimate = round(exp(est_hidden), digits=2),
-        `Est.Error` = round(exp(se_hidden), digits=2),
-        `l-95% CI` = round(exp(lower_hidden), digits=2),
-        `u-95% CI` = round(exp(upper_hidden), digits=2),
+        Estimate = round(est_hidden, digits=2),
+        `Est.Error` = round(se_hidden, digits=2),
+        `l-95% CI` = round(lower_hidden, digits=2),
+        `u-95% CI` = round(upper_hidden, digits=2),
         check.names = FALSE
       )
     }
     
-  
     formula <- model[["formula"]]
     terms_chr <- get_terms_chr(formula[1]$formula)
   
@@ -385,7 +391,7 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
           grepl(nonrefB[k], rn, fixed = TRUE)
       )
       if (length(var_idx) == 0) next
-      V_var <- V[var_idx, var_idx, drop = FALSE]
+      ##V_var <- V[var_idx, var_idx, drop = FALSE]
     
     
     hidden_label
@@ -394,13 +400,13 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
       hidden_draws1=as.data.frame(hidden_draws1)
       hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
       
-      est_hidden = median(hidden_draws1$b_hidden)
-      se_hidden <- sd(hidden_draws1$b_hidden)
-      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
-      lower_hidden <- unname(ci[1])
-      upper_hidden <- unname(ci[2])
-      
       if (transform == F){
+        est_hidden = median(hidden_draws1$b_hidden)
+        se_hidden <- sd(hidden_draws1$b_hidden)
+        ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+        lower_hidden <- unname(ci[1])
+        upper_hidden <- unname(ci[2])
+        
         interaction_two_way_dfs[[length(interaction_two_way_dfs) + 1]] <- data.frame(
           Term = hidden_label,
           Estimate = round(est_hidden, digits=2),
@@ -410,12 +416,18 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
           check.names = FALSE
         )
       } else if (transform == T){
+        est_hidden = median(exp(hidden_draws1$b_hidden))
+        se_hidden <- sd(exp(hidden_draws1$b_hidden))
+        ci <- quantile(exp(hidden_draws1$b_hidden), c(.025, .975))
+        lower_hidden <- unname(ci[1])
+        upper_hidden <- unname(ci[2])
+        
         interaction_two_way_dfs[[length(interaction_two_way_dfs) + 1]] <- data.frame(
           Term = hidden_label,
-          Estimate = round(exp(est_hidden), digits=2),
-          `Est.Error` = round(exp(se_hidden), digits=2),
-          `l-95% CI` = round(exp(lower_hidden), digits=2),
-          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
           check.names = FALSE
         )
       }
@@ -486,22 +498,19 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
       )
       
       if (length(var_idx) == 0) next
-      est_hidden <- sum(coefs_df$Estimate[var_idx])
-      V_var <- V[var_idx, var_idx, drop = FALSE]
-      
     
       posterior <- as_draws_matrix(model)
       hidden_draws1 <- posterior[, var_idx, drop = FALSE]
       hidden_draws1=as.data.frame(hidden_draws1)
       hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
       
-      est_hidden = median(hidden_draws1$b_hidden)
-      se_hidden <- sd(hidden_draws1$b_hidden)
-      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
-      lower_hidden <- unname(ci[1])
-      upper_hidden <- unname(ci[2])
-      
       if(transform == F){
+        est_hidden = median(hidden_draws1$b_hidden)
+        se_hidden <- sd(hidden_draws1$b_hidden)
+        ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+        lower_hidden <- unname(ci[1])
+        upper_hidden <- unname(ci[2])
+        
         interaction_three_way_dfs[[length(interaction_three_way_dfs) + 1]] <- data.frame(
           Term = hidden_label,
           Estimate = round(est_hidden, digits=2),
@@ -511,12 +520,18 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
           check.names = FALSE
         ) 
       } else if (transform == T){
+        est_hidden = median(exp(hidden_draws1$b_hidden))
+        se_hidden <- sd(exp(hidden_draws1$b_hidden))
+        ci <- quantile(exp(hidden_draws1$b_hidden), c(.025, .975))
+        lower_hidden <- unname(ci[1])
+        upper_hidden <- unname(ci[2])
+        
         interaction_three_way_dfs[[length(interaction_three_way_dfs) + 1]] <- data.frame(
           Term = hidden_label,
-          Estimate = round(exp(est_hidden), digits=2),
-          `Est.Error` = round(exp(se_hidden), digits=2),
-          `l-95% CI` = round(exp(lower_hidden), digits=2),
-          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
           check.names = FALSE
         )
       }
@@ -532,6 +547,7 @@ return_hidden_level_BRMS <- function(model, factor_name, transform) {
   
   return(final_df)
 }
+
     
 Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   model_name <- deparse(substitute(brms_model))
@@ -1413,6 +1429,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
