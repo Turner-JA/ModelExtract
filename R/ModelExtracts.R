@@ -1,5 +1,37 @@
 return_hidden_level_LMER <- function(model, factor_name, transform = NULL) {
 library(brms)
+
+  get_terms_chr <- function(formula) {
+    tf <- terms(formula)
+    fixed_terms <- attr(tf, "term.labels")
+    rhs <- deparse(formula[[3]])
+    rand_terms <- gregexpr("\\([^\\)]+\\|[^\\)]+\\)", rhs, perl = TRUE)
+    rand_matches <- regmatches(rhs, rand_terms)[[1]]
+    rand_terms_clean <- gsub("^\\(|\\)$", "", rand_matches)
+    all_terms <- c(fixed_terms, rand_terms_clean)
+    return(all_terms)
+  }
+
+  # Helper functions
+  get_nonref <- function(levels, is_dev) {
+    if (is_dev) {
+      levels[-length(levels)]
+    } else {
+      levels[-1]
+    }
+  }
+  
+  get_reference_level <- function(model, factor_name, tol = 1e-8) {
+    f <- model@frame[[factor_name]]
+    if (!is.factor(f)) stop(factor_name, " is not a factor")
+    levels_factor <- levels(f)
+    contr <- attr(f, "contrasts")
+    if (is.null(contr)) return(levels_factor[1])
+    zero_rows <- apply(contr, 1, function(x) all(abs(x) < tol))
+    if (any(zero_rows)) return(levels_factor[which(zero_rows)[1]])
+    row_scores <- rowSums(contr)
+    levels_factor[which.min(row_scores)]
+  }
   
 # Default to fixef and vcov for other models
 coefs <- fixef(model)
@@ -41,27 +73,6 @@ V <- vcov(model, dpar = "mu")
   # Separate two-way and three-way interactions
   two_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 2]
   three_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 3]
-  
-  # Helper functions
-  get_nonref <- function(levels, is_dev) {
-    if (is_dev) {
-      levels[-length(levels)]
-    } else {
-      levels[-1]
-    }
-  }
-  
-  get_reference_level <- function(model, factor_name, tol = 1e-8) {
-    f <- model@frame[[factor_name]]
-    if (!is.factor(f)) stop(factor_name, " is not a factor")
-    levels_factor <- levels(f)
-    contr <- attr(f, "contrasts")
-    if (is.null(contr)) return(levels_factor[1])
-    zero_rows <- apply(contr, 1, function(x) all(abs(x) < tol))
-    if (any(zero_rows)) return(levels_factor[which(zero_rows)[1]])
-    row_scores <- rowSums(contr)
-    levels_factor[which.min(row_scores)]
-  }
   
   # Prepare containers for interaction dfs
   interaction_two_way_dfs <- list()
@@ -224,6 +235,304 @@ V <- vcov(model, dpar = "mu")
   return(final_df)
 }
 
+return_hidden_level_BRMS <- function(model, factor_name, transform) {
+  library(brms) 
+  
+  ## Helpers ##
+  get_nonref <- function(levels, is_dev) {
+    if (is_dev) {
+      levels[-length(levels)]
+    } else {
+      levels[-1]
+    }
+  }
+
+  get_reference_level <- function(model, factor_name, tol = 1e-8) {
+    if (is.brmsfit(model)==T){
+      f <- brms_model[["data"]][[factor_name]] 
+    } else if (isLMM(model)==T){
+      f <- model@frame[[factor_name]]
+    }
+    if (!is.factor(f)) stop(factor_name, " is not a factor")
+    levels_factor <- levels(f)
+    contr <- attr(f, "contrasts")
+    if (is.null(contr)) return(levels_factor[1])
+    zero_rows <- apply(contr, 1, function(x) all(abs(x) < tol))
+    if (any(zero_rows)) return(levels_factor[which(zero_rows)[1]])
+    row_scores <- rowSums(contr)
+    levels_factor[which.min(row_scores)]
+  }
+  
+  get_terms_chr <- function(formula) {
+    tf <- terms(formula)
+    fixed_terms <- attr(tf, "term.labels")
+    rhs <- deparse(formula[[3]])
+    rand_terms <- gregexpr("\\([^\\)]+\\|[^\\)]+\\)", rhs, perl = TRUE)
+    rand_matches <- regmatches(rhs, rand_terms)[[1]]
+    rand_terms_clean <- gsub("^\\(|\\)$", "", rand_matches)
+    all_terms <- c(fixed_terms, rand_terms_clean)
+    return(all_terms)
+  }
+  
+  #### Start of actual function ####
+  
+  # Get fixed effects coefficients and variance-covariance matrix
+  if (is.brmsfit(model)) {
+    coefs <- fixef(model, robust=T)
+    coefs_df <-as.data.frame(coefs)
+    V <- vcov(model, dpar = "mu")
+    dfname = "data"
+  } else {
+    print("Wrong model type")
+  }
+  
+  # Get contrasts for the factor to find the missing (hidden) level
+  
+  test <- as.data.frame(attr(model[[dfname]][[factor_name]], "contrasts"))
+  cat <- tail(rownames(test), 1) # Reference category label
+  target_coef_names <- paste0(factor_name, names(test))
+  
+  var_idx <- which(rownames(coefs_df) %in% target_coef_names)
+ 
+  posterior <- as_draws_matrix(model)
+  hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+  hidden_draws1=as.data.frame(hidden_draws1)
+  hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
+    
+  est_hidden = median(hidden_draws1$b_hidden)
+  se_hidden <- sd(hidden_draws1$b_hidden)
+  ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+  lower_hidden <- unname(ci[1])
+  upper_hidden <- unname(ci[2])
+    
+    if (transform == F){
+      main_effect_df <- data.frame(
+        Term = paste(factor_name, cat, sep = ""),
+        Estimate = round(est_hidden, digits=2),
+        `Est.Error` = round(se_hidden, digits=2),
+        `l-95% CI` = round(lower_hidden, digits=2),
+        `u-95% CI` = round(upper_hidden, digits=2),
+        check.names = FALSE
+      )
+    } else if (transform == T){
+      main_effect_df <- data.frame(
+        Term = paste(factor_name, cat, sep = ""),
+        Estimate = round(exp(est_hidden), digits=2),
+        `Est.Error` = round(exp(se_hidden), digits=2),
+        `l-95% CI` = round(exp(lower_hidden), digits=2),
+        `u-95% CI` = round(exp(upper_hidden), digits=2),
+        check.names = FALSE
+      )
+    }
+    
+  
+    formula <- model[["formula"]]
+    terms_chr <- get_terms_chr(formula[1]$formula)
+  
+  # Find all interactions involving factor_name (with at least two factors)
+  relevant_interactions <- terms_chr[grepl(factor_name, terms_chr) & grepl(":", terms_chr)]
+  
+  # Separate two-way and three-way interactions
+  two_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 2]
+  three_way <- relevant_interactions[sapply(strsplit(relevant_interactions, ":"), length) == 3]
+  
+  interaction_two_way_dfs <- list()
+  interaction_three_way_dfs <- list()
+  
+  # ---- Handle two-way interactions ----
+  for (interaction in two_way) {
+    #interaction = two_way[1]
+    factors <- unlist(strsplit(interaction, ":"))
+    factorA <- factors[1]
+    factorB <- factors[2]
+    
+    devA <- (factorA == factor_name)
+    devB <- (factorB == factor_name)
+    
+    # Get levels for factors
+    levelsA <- levels(model[[dfname]][[factorA]])
+    levelsB <- levels(model[[dfname]][[factorB]])
+    
+    nonrefA <- get_nonref(levelsA, devA)
+    nonrefB <- get_nonref(levelsB, devB)
+    
+    refA <- get_reference_level(model, factorA, devA)
+    refB <- get_reference_level(model, factorB, devB)
+    
+    if (devA) {
+      hidden_label <- paste0(
+        factorA, refA, ":",
+        factorB, nonrefB
+      )
+    } else if (devB) {
+      # In case factor_name is second factor, adjust accordingly
+      hidden_label <- paste0(
+        factorA, nonrefA, ":",
+        factorB, refB
+      )
+    } else {
+      # If factor_name not in first or second factor, skip
+      next
+    }
+      rn <- rownames(coefs_df)
+      
+      for (k in seq_along(hidden_label)) {
+      
+      var_idx <- which(
+        sapply(strsplit(rn, ":"), length) == 2 &   # exactly two-way
+          grepl(factorA, rn, fixed = TRUE) &
+          grepl(factorB, rn, fixed = TRUE) &
+          grepl(nonrefB[k], rn, fixed = TRUE)
+      )
+      if (length(var_idx) == 0) next
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+    
+    
+    hidden_label
+      posterior <- as_draws_matrix(model)
+      hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+      hidden_draws1=as.data.frame(hidden_draws1)
+      hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
+      
+      est_hidden = median(hidden_draws1$b_hidden)
+      se_hidden <- sd(hidden_draws1$b_hidden)
+      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
+      if (transform == F){
+        interaction_two_way_dfs[[length(interaction_two_way_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
+          check.names = FALSE
+        )
+      } else if (transform == T){
+        interaction_two_way_dfs[[length(interaction_two_way_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(exp(est_hidden), digits=2),
+          `Est.Error` = round(exp(se_hidden), digits=2),
+          `l-95% CI` = round(exp(lower_hidden), digits=2),
+          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          check.names = FALSE
+        )
+      }
+    } 
+
+    }
+  
+  
+  # ---- Handle three-way interactions ----
+  for (interaction in three_way) {
+    #interaction = three_way[1]
+    factors <- unlist(strsplit(interaction, ":"))
+    factorA <- factors[1]
+    factorB <- factors[2]
+    factorC <- factors[3]
+    
+    devA <- (factorA == factor_name)
+    devB <- (factorB == factor_name)
+    devC <- (factorC == factor_name)
+    
+    levelsA <- levels(model[[dfname]][[factorA]])
+    levelsB <- levels(model[[dfname]][[factorB]])
+    levelsC <- levels(model[[dfname]][[factorC]])
+    
+    nonrefA <- get_nonref(levelsA, devA)
+    nonrefB <- get_nonref(levelsB, devB)
+    nonrefC <- get_nonref(levelsC, devC)
+    
+    refA <- get_reference_level(model, factorA, devA)
+    refB <- get_reference_level(model, factorB, devB)
+    refC <- get_reference_level(model, factorC, devC)
+    
+    # Construct hidden label depending on which factor is factor_name
+    if (devA) {
+      # factor_name is first
+      hidden_label <- paste0(
+        factorA, refA, ":",
+        factorB, nonrefB, ":",
+        factorC, nonrefC
+      )
+    } else if (devB) {
+      # factor_name is second
+      hidden_label <- paste0(
+        factorA, nonrefA, ":",
+        factorB, refB, ":",
+        factorC, nonrefC
+      )
+    } else if (devC) {
+      # factor_name is third
+      hidden_label <- paste0(
+        factorA, nonrefA, ":",
+        factorB, nonrefB, ":",
+        factorC, refC
+      )
+    } else {
+      next
+    }
+    
+      rn <- rownames(coefs_df)
+      
+      for (k in seq_along(hidden_label)) {
+      var_idx <- which(
+        sapply(strsplit(rn, ":"), length) == 3 &   # exactly three-way
+          grepl(factorA, rn, fixed = TRUE) &
+          grepl(factorB, rn, fixed = TRUE) &
+          grepl(factorC, rn, fixed = TRUE) &
+          grepl(nonrefB[k], rn, fixed = TRUE)
+      )
+      
+      if (length(var_idx) == 0) next
+      est_hidden <- sum(coefs_df$Estimate[var_idx])
+      V_var <- V[var_idx, var_idx, drop = FALSE]
+      
+    
+      posterior <- as_draws_matrix(model)
+      hidden_draws1 <- posterior[, var_idx, drop = FALSE]
+      hidden_draws1=as.data.frame(hidden_draws1)
+      hidden_draws1$b_hidden = rowSums(hidden_draws1)*-1
+      
+      est_hidden = median(hidden_draws1$b_hidden)
+      se_hidden <- sd(hidden_draws1$b_hidden)
+      ci <- quantile(hidden_draws1$b_hidden, c(.025, .975))
+      lower_hidden <- unname(ci[1])
+      upper_hidden <- unname(ci[2])
+      
+      if(transform == F){
+        interaction_three_way_dfs[[length(interaction_three_way_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(est_hidden, digits=2),
+          `Est.Error` = round(se_hidden, digits=2),
+          `l-95% CI` = round(lower_hidden, digits=2),
+          `u-95% CI` = round(upper_hidden, digits=2),
+          check.names = FALSE
+        ) 
+      } else if (transform == T){
+        interaction_three_way_dfs[[length(interaction_three_way_dfs) + 1]] <- data.frame(
+          Term = hidden_label,
+          Estimate = round(exp(est_hidden), digits=2),
+          `Est.Error` = round(exp(se_hidden), digits=2),
+          `l-95% CI` = round(exp(lower_hidden), digits=2),
+          `u-95% CI` = round(exp(upper_hidden), digits=2),
+          check.names = FALSE
+        )
+      }
+      }
+  }
+  
+  # Combine all results
+  final_df <- rbind(
+    main_effect_df,
+    if (length(interaction_two_way_dfs) > 0) do.call(rbind, interaction_two_way_dfs) else NULL,
+    if (length(interaction_three_way_dfs) > 0) do.call(rbind, interaction_three_way_dfs) else NULL
+  )
+  
+  return(final_df)
+}
+    
 Extract_BRMS <- function(brms_model, fontsize, filename, transform=TRUE){
   model_name <- deparse(substitute(brms_model))
   ## Two helper functions:
@@ -1521,6 +1830,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
