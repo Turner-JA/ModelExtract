@@ -2,7 +2,7 @@ merge_lev <- function(
     df1,
     df2,
     by,
-    threshold = 0.9,
+    thresholds = 0.9,
     all.x = TRUE,
     show_DF2_by_col = TRUE,
     show_merging_similarity = TRUE
@@ -10,6 +10,40 @@ merge_lev <- function(
 
   stopifnot(all(by %in% names(df1)))
   stopifnot(all(by %in% names(df2)))
+
+  # ---- handle thresholds (SAFE VERSION) ----
+
+  # Case 1: single threshold supplied -> replicate
+  if (length(thresholds) == 1) {
+    thresholds <- setNames(rep(thresholds, length(by)), by)
+  }
+
+  # Case 2: named thresholds (RECOMMENDED)
+  if (!is.null(names(thresholds))) {
+
+    missing_names <- setdiff(by, names(thresholds))
+
+    if (length(missing_names) > 0) {
+      stop(
+        paste0(
+          "Missing thresholds for columns: ",
+          paste(missing_names, collapse = ", ")
+        )
+      )
+    }
+
+    thresholds <- thresholds[by]  # enforce correct order
+  }
+
+  # Case 3: unnamed vector matching length(by)
+  if (is.null(names(thresholds))) {
+
+    if (length(thresholds) != length(by)) {
+      stop("thresholds must be length 1 or named vector matching 'by'")
+    }
+
+    names(thresholds) <- by
+  }
 
   # ---- build similarity matrices for each column ----
   similarity_list <- lapply(by, function(col) {
@@ -32,17 +66,18 @@ merge_lev <- function(
   # Determine best match per row
   best_match <- sapply(seq_len(nrow(df1)), function(i) {
 
-    # For this df1 row, get similarity vs all df2 rows
     sims_per_col <- lapply(similarity_list, function(mat) mat[i, ])
 
     sims_df <- do.call(cbind, sims_per_col)
+    colnames(sims_df) <- by
 
-    # keep rows where ALL columns >= threshold
-    valid <- apply(sims_df, 1, function(r) all(r >= threshold))
+    # each column must meet its OWN threshold
+    valid <- apply(sims_df, 1, function(r) {
+      all(r >= thresholds[names(r)])
+    })
 
     if (!any(valid)) return(NA)
 
-    # among valid, choose highest combined similarity
     valid_idx <- which(valid)
     best <- valid_idx[which.max(combined_similarity[i, valid_idx])]
 
@@ -1522,6 +1557,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
