@@ -1,3 +1,64 @@
+merge_lev <- function(
+    df1,
+    df2,
+    by,
+    threshold = 0.9,
+    all.x = TRUE,
+    show_DF2_by_col = TRUE,
+    show_merging_similarity = TRUE
+) {
+  
+  x <- as.character(df1[[by]])
+  y <- as.character(df2[[by]])
+  
+  # Compute Levenshtein distance matrix
+  dist_matrix <- stringdistmatrix(x, y, method = "lv")
+  
+  # Convert distance to similarity (0–1)
+  max_len <- outer(nchar(x), nchar(y), pmax)
+  similarity_matrix <- 1 - (dist_matrix / max_len)
+  
+  # Best match index per row
+  best_match <- apply(similarity_matrix, 1, function(row) {
+    if (all(is.na(row))) return(NA)
+    idx <- which.max(row)
+    if (row[idx] >= threshold) idx else NA
+  })
+  
+  # Extract similarity score
+  best_similarity <- sapply(seq_along(best_match), function(i) {
+    if (!is.na(best_match[i])) similarity_matrix[i, best_match[i]] else NA
+  })
+  
+  # Rename df2 merge column
+  df2_renamed <- df2
+  by2_name <- paste0(by, "_2ndDF")
+  names(df2_renamed)[names(df2_renamed) == by] <- by2_name
+  
+  matched_df2 <- df2_renamed[best_match, , drop = FALSE]
+  
+  # Optionally remove df2 merge column
+  if (!show_DF2_by_col) {
+    matched_df2 <- matched_df2[, names(matched_df2) != by2_name, drop = FALSE]
+  }
+  
+  # Combine results
+  result <- bind_cols(df1, matched_df2)
+  
+  # Optionally add similarity column
+  if (show_merging_similarity) {
+    result$String_merge_similarity <- best_similarity
+  }
+  
+  # all.x behaviour
+  if (!all.x) {
+    keep <- !is.na(best_match)
+    result <- result[keep, , drop = FALSE]
+  }
+  
+  return(result)
+}
+
 return_hidden_level_LMER <- function(model, factor_name, transform = NULL) {
 library(brms)
 
@@ -1429,6 +1490,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
