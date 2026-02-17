@@ -8,73 +8,79 @@ merge_lev <- function(
     show_merging_similarity = TRUE
 ) {
 
-  # Ensure by exists
   stopifnot(all(by %in% names(df1)))
   stopifnot(all(by %in% names(df2)))
 
-  # Convert single column to vector
-  if (length(by) == 1) {
+  # ---- build similarity matrices for each column ----
+  similarity_list <- lapply(by, function(col) {
 
-    x <- as.character(df1[[by]])
-    y <- as.character(df2[[by]])
+    x <- as.character(df1[[col]])
+    y <- as.character(df2[[col]])
 
     dist_matrix <- stringdist::stringdistmatrix(x, y, method = "lv")
     max_len <- outer(nchar(x), nchar(y), pmax)
-    similarity_matrix <- 1 - (dist_matrix / max_len)
 
-  } else {
+    sim <- 1 - (dist_matrix / max_len)
+    sim
+  })
 
-    # --- MULTI COLUMN MODE ---
+  names(similarity_list) <- by
 
-    similarity_list <- lapply(by, function(col) {
+  # Combined similarity (used only for ranking best candidate)
+  combined_similarity <- Reduce("+", similarity_list)
 
-      x <- as.character(df1[[col]])
-      y <- as.character(df2[[col]])
+  # Determine best match per row
+  best_match <- sapply(seq_len(nrow(df1)), function(i) {
 
-      dist_matrix <- stringdist::stringdistmatrix(x, y, method = "lv")
-      max_len <- outer(nchar(x), nchar(y), pmax)
+    # For this df1 row, get similarity vs all df2 rows
+    sims_per_col <- lapply(similarity_list, function(mat) mat[i, ])
 
-      1 - (dist_matrix / max_len)
+    sims_df <- do.call(cbind, sims_per_col)
+
+    # keep rows where ALL columns >= threshold
+    valid <- apply(sims_df, 1, function(r) all(r >= threshold))
+
+    if (!any(valid)) return(NA)
+
+    # among valid, choose highest combined similarity
+    valid_idx <- which(valid)
+    best <- valid_idx[which.max(combined_similarity[i, valid_idx])]
+
+    best
+  })
+
+  # Extract similarity values for chosen matches
+  best_similarity_cols <- lapply(names(similarity_list), function(col) {
+
+    mat <- similarity_list[[col]]
+
+    sapply(seq_along(best_match), function(i) {
+      if (!is.na(best_match[i])) mat[i, best_match[i]] else NA
     })
-
-    # Average similarity across columns
-    similarity_matrix <- Reduce("+", similarity_list) / length(similarity_list)
-  }
-
-  # Best match index per row
-  best_match <- apply(similarity_matrix, 1, function(row) {
-    if (all(is.na(row))) return(NA)
-    idx <- which.max(row)
-    if (row[idx] >= threshold) idx else NA
   })
 
-  # Extract similarity score
-  best_similarity <- sapply(seq_along(best_match), function(i) {
-    if (!is.na(best_match[i])) similarity_matrix[i, best_match[i]] else NA
-  })
+  names(best_similarity_cols) <- paste0("String_merge_similarity_", by)
 
   # Rename df2 merge columns
   df2_renamed <- df2
-
   by2_name <- paste0(by, "_2ndDF")
   names(df2_renamed)[match(by, names(df2_renamed))] <- by2_name
 
   matched_df2 <- df2_renamed[best_match, , drop = FALSE]
 
-  # Optionally remove df2 merge columns
   if (!show_DF2_by_col) {
     matched_df2 <- matched_df2[, !(names(matched_df2) %in% by2_name), drop = FALSE]
   }
 
-  # Combine results
   result <- dplyr::bind_cols(df1, matched_df2)
 
-  # Add similarity column
+  # Add per-column similarity outputs
   if (show_merging_similarity) {
-    result$String_merge_similarity <- best_similarity
+    for (nm in names(best_similarity_cols)) {
+      result[[nm]] <- best_similarity_cols[[nm]]
+    }
   }
 
-  # all.x behaviour
   if (!all.x) {
     keep <- !is.na(best_match)
     result <- result[keep, , drop = FALSE]
@@ -82,6 +88,7 @@ merge_lev <- function(
 
   return(result)
 }
+
 
 
 return_hidden_level_LMER <- function(model, factor_name, transform = NULL) {
@@ -1515,6 +1522,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
