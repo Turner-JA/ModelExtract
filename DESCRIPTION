@@ -16,7 +16,9 @@ Depends: lmerTest,
          dplyr,
          officer,
          flextable,
-         performance
+         performance,
+         stringdist
+
 
 
 
