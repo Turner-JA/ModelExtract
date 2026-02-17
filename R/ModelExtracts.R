@@ -1494,7 +1494,10 @@ RanSlope_Tester_Auto <- function(
         TRUE ~ "Low Risk"
       )
     )
-  
+
+  combined <-combined %>%
+    arrange(Grouping_Factor)
+                            
   # --- Print colored table ---
   if (verbose) {
   # Convert numeric columns to strings to measure width
@@ -1557,6 +1560,7 @@ RanSlope_Tester_Auto <- function(
     
   if (return_table) return(combined) else invisible(combined)
 }
+
 
 
 
