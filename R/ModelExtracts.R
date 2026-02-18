@@ -1565,6 +1565,351 @@ RanSlope_Tester_Auto <- function(
 
 
 
+RanSlope_Tester <- function(
+    DF, dv, var, RanIntercepts,
+    include_lower_order = TRUE,
+    verbose = TRUE,
+    return_table = FALSE,
+    w_small = 0.2, w_unbalanced = 0.2, w_variation = 0.6,
+    # --- Customizable thresholds ---
+    min_cluster_size = NULL,       # minimum obs per cluster (default: median - SD)
+    min_continuous_sd = 0.1,       # minimum meaningful variation as fraction of overall SD
+    min_cat_prop = 0.05            # minimum proportion to avoid "highly unbalanced"
+) {
+  # --- Load required packages ---
+  required_pkgs <- c("dplyr", "glue", "crayon", "scales", "rlang")
+  missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing_pkgs) > 0) {
+    stop(glue::glue("Missing required packages: {paste(missing_pkgs, collapse = ', ')}"))
+  }
+  
+  msg <- function(text, color = "white") {
+    if (verbose) cat(do.call(crayon::style, list(text, color)), "\n")
+  }
+  
+  # --- Check grouping variables ---
+  for (g in RanIntercepts) {
+    if (anyNA(DF[[g]])) warning(glue::glue("Grouping variable '{g}' has missing values."))
+    if (length(unique(DF[[g]])) < 2) stop(glue::glue("Grouping variable '{g}' has < 2 clusters."))
+  }
+  
+  # --- Core diagnostic function ---
+  RanSlope_Tester12 <- function(DF, dv, var, RanIntercepts) {
+    temp_var_name <- ".temp_var_for_ranslope_check"
+    
+    if (grepl("\\*", var)) {
+      var_terms <- all.vars(rlang::parse_expr(var))
+      DF[[temp_var_name]] <- interaction(DF[var_terms], drop = TRUE)
+    } else {
+      var_expr <- rlang::parse_expr(var)
+      DF[[temp_var_name]] <- with(DF, eval(var_expr))
+    }
+    
+    var_is_continuous <- is.numeric(DF[[temp_var_name]])
+    
+    check_dv_variance <- function(dv_vector) {
+      if (is.numeric(dv_vector)) return(var(dv_vector, na.rm = TRUE) > 0)
+      present_levels <- unique(dv_vector[!is.na(dv_vector)])
+      if (length(present_levels) <= 1) return(FALSE)
+      tab <- table(dv_vector)
+      return(all(tab / sum(tab) > 0))
+    }
+    
+    results <- list()
+    
+    for (RanIntercept in RanIntercepts) {
+      msg(glue::glue("\nChecking random slope for {var} within {RanIntercept}"), "blue")
+      
+      cluster_sizes <- DF %>%
+        dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+        dplyr::summarise(n = dplyr::n(), .groups = "drop")
+      
+      # --- Determine minimum cluster size ---
+      if (is.null(min_cluster_size)) {
+        min_cluster_n <- max(2, floor(median(cluster_sizes$n) - sd(cluster_sizes$n)))
+      } else {
+        min_cluster_n <- min_cluster_size
+      }
+      
+      small_clusters <- sum(cluster_sizes$n < min_cluster_n, na.rm = TRUE)
+      total_clusters <- nrow(cluster_sizes)
+      prop_small_clusters <- small_clusters / total_clusters
+      if (small_clusters > 0)
+        msg(glue::glue("⚠️ {small_clusters}/{total_clusters} groups < {min_cluster_n} obs."), "yellow")
+      
+      prop_passing <- NA
+      prop_unbalanced <- 0
+      
+      if (var_is_continuous) {
+        overall_sd <- stats::sd(DF[[temp_var_name]], na.rm = TRUE)
+        cluster_sds <- DF %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::summarise(sd_val = stats::sd(.data[[temp_var_name]], na.rm = TRUE), .groups = "drop")
+        
+        threshold_sd <- max(min_continuous_sd * overall_sd, 1e-8)
+        cluster_sds <- cluster_sds %>%
+          dplyr::mutate(meaningful_variation = !is.na(sd_val) & sd_val >= threshold_sd)
+        
+        n_with_variation <- sum(cluster_sds$meaningful_variation, na.rm = TRUE)
+        prop_passing <- n_with_variation / total_clusters
+        prop_failing <- 1-prop_passing
+        #prop_failing <- format(prop_failing, digits = 3)
+        
+        msg(glue::glue("{n_with_variation}/{total_clusters} ({scales::percent(prop_passing)}) groups show meaningful within-cluster variation: Props_Clusters_Failing = {format(round(prop_failing, 3), nsmall = 3)}"), 
+            ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
+        
+      } else {
+        
+        
+        counts0 <- DF %>%
+          dplyr::filter(!is.na(.data[[dv]]), .data[[dv]] == 0) %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(RanIntercept, temp_var_name)))) %>%
+          dplyr::summarise(
+            n0 = if ("Freq" %in% names(DF)) sum(.data$Freq, na.rm = TRUE) else dplyr::n(),
+            .groups = "drop"
+          )
+        
+        counts1 <- DF %>%
+          dplyr::filter(!is.na(.data[[dv]]), .data[[dv]] == 1) %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(c(RanIntercept, temp_var_name)))) %>%
+          dplyr::summarise(
+            n1 = if ("Freq" %in% names(DF)) sum(.data$Freq, na.rm = TRUE) else dplyr::n(),
+            .groups = "drop"
+          )
+        
+        level_summ <- dplyr::full_join(
+          counts0, counts1, by = c(RanIntercept, temp_var_name)
+        ) %>%
+          dplyr::mutate(
+            n0 = dplyr::coalesce(.data$n0, 0),
+            n1 = dplyr::coalesce(.data$n1, 0),
+            n_total = .data$n0 + .data$n1,
+            has_variance = (.data$n0 > 0 & .data$n1 > 0 & .data$n_total >= 2)
+          )
+        
+        # Keep only (group, level) combinations that truly show DV variance with replication
+        valid_combos <- level_summ %>% dplyr::filter(.data$has_variance)
+        
+        # Count how many distinct temp_var levels with DV variance each group has
+        levels_per_group <- valid_combos %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::summarise(
+            levels_with_variance = dplyr::n_distinct(.data[[temp_var_name]]),
+            .groups = "drop"
+          )
+        
+        # --- Additional guard for factor × numeric interactions only ---
+        # If 'var' was an interaction and includes at least one numeric term,
+        # require that, within each group, at least one factor level shows
+        # meaningful within-level variation of the numeric term(s).
+        apply_fxnum_guard <- FALSE
+        if (exists("var_terms", inherits = FALSE)) {
+          num_terms <- var_terms[vapply(var_terms, function(v) is.numeric(DF[[v]]), logical(1))]
+          fac_terms <- setdiff(var_terms, num_terms)
+          if (length(num_terms) >= 1 && length(fac_terms) >= 1) {
+            apply_fxnum_guard <- TRUE
+            # Numeric part: product if multiple numeric terms
+            num_prod <- Reduce(`*`, lapply(num_terms, function(v) DF[[v]]))
+            overall_sd_num <- stats::sd(num_prod, na.rm = TRUE)
+            # Use your existing threshold style
+            threshold_sd <- max(min_continuous_sd * overall_sd_num, 1e-8)
+            
+            fac_int <- interaction(DF[fac_terms], drop = TRUE)
+            
+            design_sd_tbl <- DF %>%
+              dplyr::mutate(.fac = fac_int, .num = num_prod) %>%
+              dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept)), .fac) %>%
+              dplyr::summarise(sd_num = stats::sd(.data$.num, na.rm = TRUE), .groups = "drop") %>%
+              dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+              dplyr::summarise(has_design_var = any(.data$sd_num >= threshold_sd, na.rm = TRUE), .groups = "drop")
+          }
+        }
+        
+        # Groups pass if:
+        #   (A) they have >= 2 levels with DV variance, AND
+        #   (B) (for factor×numeric only) they have within-group variation in the numeric
+        #       component for at least one factor level (design columns vary).
+        passing_groups_A <- levels_per_group %>%
+          dplyr::filter(.data$levels_with_variance >= 2) %>%
+          dplyr::select(dplyr::all_of(RanIntercept)) %>%
+          dplyr::distinct()
+        
+        if (apply_fxnum_guard) {
+          passing_groups_B <- design_sd_tbl %>%
+            dplyr::filter(.data$has_design_var) %>%
+            dplyr::select(dplyr::all_of(RanIntercept)) %>%
+            dplyr::distinct()
+          
+          passing_groups <- dplyr::inner_join(
+            passing_groups_A, passing_groups_B, by = RanIntercept
+          )
+          n_multilevel <- nrow(passing_groups)
+        } else {
+          n_multilevel <- nrow(passing_groups_A)
+        }
+        
+        prop_passing <- n_multilevel / total_clusters
+        prop_failing <- 1 - prop_passing
+        
+        
+        # --- Unbalanced groups based on min_cat_prop ---
+        level_props <- counts %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(RanIntercept))) %>%
+          dplyr::mutate(prop = n / sum(n)) %>%
+          dplyr::ungroup()
+        
+        unbalanced_groups <- level_props %>%
+          dplyr::filter(prop < min_cat_prop) %>%
+          dplyr::distinct(dplyr::across(dplyr::all_of(RanIntercept)))
+        
+        prop_unbalanced <- nrow(unbalanced_groups) / total_clusters
+        if (nrow(unbalanced_groups) > 0)
+          msg(glue::glue("⚠️ {nrow(unbalanced_groups)} groups are highly unbalanced."), "yellow")
+        
+        msg(glue::glue("{n_multilevel}/{total_clusters} ({scales::percent(prop_passing)}) groups show ≥2 levels with DV variance: Prop_Clusters_Failing = {format(round(prop_failing, 3), nsmall = 3)}"),
+            ifelse(prop_passing == 0, "red", ifelse(prop_passing < 0.5, "yellow", "green")))
+      }
+      
+      # --- Risk score calculation (normalized) ---
+      if (prop_failing == 1) {
+        risk_score <- 1
+      } else {
+        risk_score <- w_small * prop_small_clusters +
+          w_unbalanced * prop_unbalanced +
+          w_variation * prop_failing
+        #risk_score <- min(risk_score, 1)  # cap at 1
+      }
+      
+      results[[RanIntercept]] <- list(
+        Grouping_Factor = RanIntercept,
+        Prop_Small_Groups = prop_small_clusters,
+        Prop_Unbalanced = prop_unbalanced,
+        Prop_Clusters_Failing = prop_failing,
+        Risk_Score = risk_score
+      )
+    }
+    
+    dplyr::bind_rows(lapply(results, as.data.frame))
+  }
+  
+  # --- Expand interactions if needed ---
+  expand_interactions <- function(var) {
+    parts <- trimws(unlist(strsplit(var, "\\*")))
+    n <- length(parts)
+    if (n == 1 || !include_lower_order) return(var)
+    combos <- unlist(lapply(1:(n - 1), function(k) apply(combn(parts, k), 2, paste, collapse = "*")))
+    return(c(combos, var))
+  }
+  
+  effects <- if (grepl("\\*", var)) expand_interactions(var) else var
+  
+  # --- Run diagnostics ---
+  all_results <- lapply(effects, function(eff) {
+    res <- RanSlope_Tester12(DF, dv, eff, RanIntercepts)
+    res$Effect <- eff
+    res$Effect_Type <- if (grepl("\\*", eff)) "Interaction" else "Main Effect"
+    res
+  })
+  
+  combined <- dplyr::bind_rows(all_results) %>%
+    dplyr::select(Effect, Effect_Type, dplyr::everything())
+  
+  # --- Downgrade interactions if lower-order terms fail ---
+  if (any(combined$Effect_Type == "Interaction")) {
+    for (eff in combined$Effect[combined$Effect_Type == "Interaction"]) {
+      parts <- unlist(strsplit(eff, "\\*"))
+      for (grp in unique(combined$Grouping_Factor)) {
+        lower_scores <- combined %>%
+          dplyr::filter(Effect %in% parts, Grouping_Factor == grp) %>%
+          dplyr::pull(Risk_Score)
+        if (any(lower_scores == 1)) {
+          combined$Risk_Score[combined$Effect == eff & combined$Grouping_Factor == grp] <- 1
+        }
+      }
+    }
+  }
+  
+  # --- Add Overall Recommendation ---
+  combined <- combined %>%
+    dplyr::mutate(
+      Overall_Recommendation = dplyr::case_when(
+        Risk_Score == 1 ~ "Impossible",
+        Risk_Score > 0.5 ~ "High Risk",
+        Risk_Score > 0.25 ~ "Medium Risk",
+        TRUE ~ "Low Risk"
+      )
+    )
+  
+  combined <-combined %>%
+    arrange(Grouping_Factor)
+  
+  # --- Print colored table ---
+  if (verbose) {
+    # Convert numeric columns to strings to measure width
+    combined_str <- combined %>%
+      dplyr::mutate(
+        Prop_Small_Groups_str = sprintf("%.3f", Prop_Small_Groups),
+        Prop_Unbalanced_str = sprintf("%.3f", Prop_Unbalanced),
+        Prop_Clusters_Failing_str = sprintf("%.3f", Prop_Clusters_Failing),
+        Risk_Score_str = sprintf("%.3f", Risk_Score)
+      )
+    
+    # Determine max widths (header vs content)
+    effect_width <- max(nchar(as.character(combined$Effect)), nchar("Effect"))
+    type_width <- max(nchar(as.character(combined$Effect_Type)), nchar("Effect_Type"))
+    group_width <- max(nchar(as.character(combined$Grouping_Factor)), nchar("Grouping_Factor"))
+    small_width <- max(nchar(combined_str$Prop_Small_Groups_str), nchar("Prop_Small_Groups"))
+    unbal_width <- max(nchar(combined_str$Prop_Unbalanced_str), nchar("Prop_Unbalanced"))
+    passing_width <- max(nchar(combined_str$Prop_Clusters_Failing_str), nchar("Prop_Clusters_Failing"))
+    risk_width <- max(nchar(combined_str$Risk_Score_str), nchar("Risk_Score"))
+    rec_width <- max(nchar(as.character(combined$Overall_Recommendation)), nchar("Overall_Recommendation"))
+    
+    # Header
+    cat(sprintf(
+      paste0(
+        "%-", effect_width, "s  %-", type_width, "s  %-", group_width, "s  ",
+        "%-", small_width, "s  %-", unbal_width, "s  %-", passing_width, "s  ",
+        "%-", risk_width, "s  %-", rec_width, "s\n"
+      ),
+      "Effect", "Effect_Type", "Grouping_Factor",
+      "Prop_Small_Groups", "Prop_Unbalanced",
+      "Prop_Clusters_Failing", "Risk_Score", "Overall_Recommendation"
+    ))
+    cat(strrep("-", effect_width + type_width + group_width + small_width + unbal_width +
+                 passing_width + risk_width + rec_width + 14), "\n")
+    
+    # Rows
+    for (i in 1:nrow(combined)) {
+      row <- combined[i, ]
+      rec_colored <- switch(
+        as.character(row$Overall_Recommendation),
+        "Impossible" = crayon::red$bold((row$Overall_Recommendation)),
+        "High Risk" = crayon::red(row$Overall_Recommendation),
+        "Medium Risk" = crayon::yellow(row$Overall_Recommendation),
+        "Low Risk" = crayon::green(row$Overall_Recommendation)
+      )
+      cat(sprintf(
+        paste0(
+          "%-", effect_width, "s  %-", type_width, "s  %-", group_width, "s  ",
+          "%-", small_width, ".3f  %-", unbal_width, ".3f  %-", passing_width, ".3f  ",
+          "%-", risk_width, ".3f  %-", rec_width, "s\n"
+        ),
+        row$Effect, row$Effect_Type, row$Grouping_Factor,
+        row$Prop_Small_Groups, row$Prop_Unbalanced,
+        row$Prop_Clusters_Failing, row$Risk_Score,
+        rec_colored
+      ))
+    }
+  }
+  
+  
+  if (return_table) return(combined) else invisible(combined)
+}
+
+
+
+
+
 
 
 
